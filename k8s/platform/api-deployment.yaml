@@ -1,0 +1,85 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selfops-api
+  namespace: platform
+  labels:
+    app: selfops-api
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selfops-api
+  template:
+    metadata:
+      labels:
+        app: selfops-api
+    spec:
+      containers:
+        - name: api
+          image: docker.io/library/selfops-api:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8000
+          env:
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: selfops-secrets
+                  key: postgres-password
+            - name: DATABASE_URL
+              value: "postgresql+asyncpg://selfops:$(POSTGRES_PASSWORD)@postgres-postgresql.platform.svc.cluster.local:5432/selfops"
+            - name: REDIS_URL
+              value: "redis://redis-master.platform.svc.cluster.local:6379"
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: selfops-secrets
+                  key: openrouter-api-key
+            - name: TELEGRAM_BOT_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: selfops-secrets
+                  key: telegram-bot-token
+            - name: TELEGRAM_CHAT_ID
+              valueFrom:
+                secretKeyRef:
+                  name: selfops-secrets
+                  key: telegram-chat-id
+            - name: PROMETHEUS_URL
+              value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+            - name: LOKI_URL
+              value: "http://loki.monitoring.svc.cluster.local:3100"
+            - name: ANALYSIS_SERVICE_URL
+              value: "http://selfops-analysis.platform.svc.cluster.local:8001"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          livenessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /api/health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selfops-api
+  namespace: platform
+spec:
+  selector:
+    app: selfops-api
+  ports:
+    - port: 8000
+      targetPort: 8000

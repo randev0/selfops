@@ -1,0 +1,57 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selfops-frontend
+  namespace: platform
+  labels:
+    app: selfops-frontend
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selfops-frontend
+  template:
+    metadata:
+      labels:
+        app: selfops-frontend
+    spec:
+      containers:
+        - name: frontend
+          image: docker.io/library/selfops-frontend:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3000
+          env:
+            - name: NEXT_PUBLIC_API_URL
+              value: ""
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 15
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /
+              port: 3000
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selfops-frontend
+  namespace: platform
+spec:
+  selector:
+    app: selfops-frontend
+  ports:
+    - port: 3000
+      targetPort: 3000

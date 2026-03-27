@@ -608,16 +608,16 @@ async def notify_incident(
     probable_cause = analysis.probable_cause if analysis else "Unknown"
     recommendation = analysis.recommendation if analysis else "No recommendation"
 
+    # Build plain-text message (avoids Markdown parse errors)
     text = (
-        f"\U0001f6a8 *SelfOps Alert*\n"
-        f"*Incident:* {incident.title}\n"
-        f"*Service:* {incident.service_name or 'N/A'} | "
-        f"*Namespace:* {incident.namespace or 'N/A'}\n"
-        f"*Status:* {status} | *Severity:* {severity}\n\n"
-        f"*Analysis:* {summary}\n"
-        f"*Probable cause:* {probable_cause}\n"
-        f"*Recommended action:* {recommendation}\n\n"
-        f"_View in dashboard: {config.frontend_url}/incidents/{incident_id}_"
+        f"\U0001f6a8 SelfOps Alert\n"
+        f"Incident: {incident.title}\n"
+        f"Service: {incident.service_name or 'N/A'} | Namespace: {incident.namespace or 'N/A'}\n"
+        f"Status: {status} | Severity: {severity}\n\n"
+        f"Analysis: {summary}\n"
+        f"Probable cause: {probable_cause}\n"
+        f"Recommended action: {recommendation}\n\n"
+        f"Dashboard: {config.frontend_url}/incidents/{incident_id}"
     )
 
     async with httpx.AsyncClient(timeout=15.0) as client:
@@ -627,11 +627,16 @@ async def notify_incident(
                 json={
                     "chat_id": config.telegram_chat_id,
                     "text": text,
-                    "parse_mode": "Markdown",
                 },
             )
-            resp.raise_for_status()
-            log.info("Telegram notification sent", incident_id=incident_id)
+            if not resp.is_success:
+                log.error(
+                    "Telegram notification failed",
+                    status=resp.status_code,
+                    body=resp.text[:500],
+                )
+            else:
+                log.info("Telegram notification sent", incident_id=incident_id)
         except Exception as exc:
             log.error("Telegram notification failed", error=str(exc))
 

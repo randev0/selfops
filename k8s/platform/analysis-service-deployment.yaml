@@ -1,0 +1,60 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selfops-analysis
+  namespace: platform
+  labels:
+    app: selfops-analysis
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selfops-analysis
+  template:
+    metadata:
+      labels:
+        app: selfops-analysis
+    spec:
+      containers:
+        - name: analysis
+          image: docker.io/library/selfops-analysis:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 8001
+          env:
+            - name: OPENROUTER_API_KEY
+              valueFrom:
+                secretKeyRef:
+                  name: selfops-secrets
+                  key: openrouter-api-key
+          resources:
+            requests:
+              memory: "128Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selfops-analysis
+  namespace: platform
+spec:
+  selector:
+    app: selfops-analysis
+  ports:
+    - port: 8001
+      targetPort: 8001

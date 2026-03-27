@@ -1,6 +1,8 @@
 # SelfOps — AI-Powered Self-Healing Infrastructure
 
-> An autonomous infrastructure platform that detects failures, enriches incidents with metrics and logs, uses an LLM to produce root cause analysis, and enables safe one-click or automated remediation — all with a full audit trail.
+> An autonomous infrastructure platform that detects failures, enriches incidents with metrics and logs, uses an LLM to produce root cause analysis, and enables safe one-click remediation — all with a full audit trail.
+
+**Live demo:** http://app.89.167.95.204.nip.io
 
 ---
 
@@ -8,185 +10,153 @@
 
 | Component | Technology | Why |
 |-----------|-----------|-----|
-| Orchestration | k3s (Kubernetes) | Lightweight, production-grade, single-binary |
-| API Backend | FastAPI (Python) | Async, fast, auto-generates OpenAPI docs |
-| Job Queue | ARQ + Redis | Async Redis-backed jobs, perfect for background enrichment |
-| Database | PostgreSQL | Reliable, rich JSONB support for flexible evidence storage |
-| LLM Inference | OpenRouter (Claude Haiku) | Cheap, fast, high-quality SRE analysis |
-| Metrics | Prometheus + kube-prometheus-stack | Industry standard, rich Kubernetes metrics |
-| Logs | Loki + Promtail | Efficient log aggregation, integrates with Grafana |
-| Visualization | Grafana | Best-in-class metrics/logs dashboards |
-| Frontend | Next.js 14 + Tailwind + shadcn/ui | Fast, type-safe, great DX |
-| Remediation | Ansible playbooks | Declarative, idempotent, human-readable |
-| Notifications | Telegram Bot API | Simple, reliable push notifications |
-| Infrastructure | Hetzner + Terraform | Cost-effective, reproducible infra |
+| Orchestration | k3s (Kubernetes) | Lightweight single-node Kubernetes, production-grade |
+| Alert ingestion | Alertmanager webhook | Native Prometheus integration |
+| Metrics | Prometheus + kube-prometheus-stack | Industry standard, rich ecosystem |
+| Logs | Loki + Promtail | Lightweight log aggregation, Grafana native |
+| Dashboards | Grafana | Best-in-class observability UI |
+| Backend API | FastAPI (Python) | Async, typed, auto-docs, fast to develop |
+| Job queue | ARQ (Redis-backed) | Async Python job queue, simple and reliable |
+| Database | PostgreSQL | Full ACID for audit trail and incident history |
+| Cache/Queue | Redis | Fast, used by ARQ worker |
+| AI analysis | OpenRouter → Claude 3 Haiku | Cost-effective LLM with structured JSON output |
+| Remediation | Ansible playbooks | Idempotent, auditable, kubectl-based |
+| Frontend | Next.js + Tailwind CSS | Fast SPA, live-refreshing incident list |
+| Notifications | Telegram Bot API | Instant mobile alerts |
+| Infrastructure | Hetzner VPS + Terraform | Reproducible cloud provisioning |
 
 ---
 
-## Architecture Overview
+## Architecture
 
 ```
-Alertmanager ──webhook──► selfops-api ──queue──► worker
-                                │                    │
-                                │              enrich (Prometheus + Loki)
-                                │              analyze (OpenRouter LLM)
-                                │              notify (Telegram)
-                                │
-                          PostgreSQL
-                                │
-                          Next.js Frontend ──► operator browser
-                                │
-                    remediation-runner ──► Ansible ──► kubectl
+Kubernetes Cluster
+  │
+  ├── Prometheus ──── scrapes metrics ──► Alertmanager
+  │                                            │
+  │                                    POST /api/alerts/webhook
+  │                                            │
+  ├── FastAPI (selfops-api) ◄──────────────────┘
+  │      │  creates incident row
+  │      │  enqueues enrich_incident job
+  │      │
+  ├── ARQ Worker (selfops-worker)
+  │      │
+  │      ├── enrich_incident
+  │      │     ├── query Prometheus metrics
+  │      │     └── query Loki logs
+  │      │
+  │      ├── analyze_incident
+  │      │     └── POST /analyze → Analysis Service → OpenRouter LLM
+  │      │
+  │      ├── notify_incident → Telegram Bot
+  │      │
+  │      └── run_remediation
+  │            └── ansible-playbook (kubectl rollout restart / scale)
+  │
+  ├── Analysis Service (selfops-analysis)
+  │      └── FastAPI, builds prompt, calls OpenRouter, returns structured JSON
+  │
+  └── Next.js Frontend (selfops-frontend)
+         └── Incidents list, detail view, evidence, analysis, actions, audit log
 ```
-
-Full architecture details: [docs/architecture.md](docs/architecture.md)
 
 ---
 
 ## Demo Scenarios
 
-### Scenario 1: Pod Crash Loop
-1. Trigger: `./scripts/trigger-demo-crash.sh`
-2. Watch: Pod enters CrashLoopBackOff
-3. SelfOps: Detects → Enriches → Analyzes → Notifies (Telegram)
-4. Operator: Views incident in dashboard, clicks "Restart Deployment"
-5. SelfOps: Runs Ansible, pod recovers, sends completion notification
+### Scenario 1 — Pod Crash Loop (most dramatic)
 
-### Scenario 2: High CPU Usage
-1. Trigger: `./scripts/trigger-demo-cpu.sh`
-2. Watch: CPU alert fires after ~2 minutes
-3. SelfOps: Same pipeline, recommends "Scale Up Replicas"
+1. Visit http://app.89.167.95.204.nip.io/incidents
+2. Trigger a crash:
+   ```bash
+   ./scripts/trigger-demo-crash.sh
+   ```
+3. Within 60–90 seconds an incident appears in the dashboard
+4. Watch it progress: `OPEN → ENRICHING → ANALYZING → ACTION_REQUIRED`
+5. Click the incident → Analysis tab to see the LLM root cause analysis
+6. Click Actions tab → Run "Restart Deployment"
+7. The Ansible playbook runs, pods restart, Telegram notification arrives
 
-### Scenario 3: Memory Leak
-1. Trigger: `kubectl exec -n platform <pod> -- curl localhost:8080/leak-memory`
-2. Watch: HighMemoryUsage alert fires
-3. SelfOps: Recommends restart
-
----
-
-## Running Locally (Port Forwarding)
+### Scenario 2 — CPU Spike
 
 ```bash
-# Prerequisites: kubectl configured, cluster running
-./scripts/port-forward.sh
+./scripts/trigger-demo-cpu.sh
+# Alert fires in ~2 minutes
+```
 
-# Access:
-# API Docs:      http://localhost:8000/api/docs
-# Frontend:      http://localhost:3000
-# Grafana:       http://localhost:3001  (admin / selfops-grafana-2024)
-# Prometheus:    http://localhost:9090
-# Alertmanager:  http://localhost:9093
+### Scenario 3 — Manual webhook (instant)
+
+```bash
+curl -X POST http://app.89.167.95.204.nip.io/api/alerts/webhook \
+  -H "Content-Type: application/json" \
+  -d '{
+    "receiver": "selfops-webhook",
+    "status": "firing",
+    "alerts": [{
+      "status": "firing",
+      "labels": {"alertname": "PodCrashLooping", "namespace": "platform", "severity": "critical", "service": "selfops-demo-app"},
+      "annotations": {"summary": "Pod is crash looping", "description": "Demo crash loop"},
+      "startsAt": "2024-01-01T00:00:00Z",
+      "fingerprint": "demo-manual-001"
+    }],
+    "groupLabels": {}, "commonLabels": {}, "commonAnnotations": {}, "externalURL": ""
+  }'
 ```
 
 ---
 
-## Deploying from Scratch
+## How to Run Locally
 
 ### Prerequisites
-- Hetzner Cloud account with API token
-- Domain or use nip.io (included)
-- Telegram bot token (create via @BotFather)
-- OpenRouter API key (openrouter.ai)
 
-### Steps
+- Ubuntu 22.04+ or macOS
+- Docker
+- k3s or kind for local Kubernetes
+- Node.js 20+
 
-**1. Clone the repo:**
+### Local development with port-forwarding
+
 ```bash
-git clone https://github.com/your-username/ai-self-healing-platform.git
+# Clone the repo
+git clone https://github.com/YOUR_USER/ai-self-healing-platform.git
 cd ai-self-healing-platform
-```
 
-**2. Fill in secrets:**
-```bash
+# Copy and fill in secrets
 cp .env.example .env
-# Edit .env with your actual values
-```
+# Edit .env with your credentials
 
-**3. Provision infrastructure (optional — if not using existing VPS):**
-```bash
-cd infra/terraform
-terraform init
-terraform apply
-```
+# Start port-forwarding to the cluster
+export KUBECONFIG=~/.kube/config
+./scripts/port-forward.sh
 
-**4. Bootstrap the server:**
-```bash
-cd infra/ansible
-ansible-playbook -i inventory.ini bootstrap.yml
-ansible-playbook -i inventory.ini k3s.yml
-```
-
-**5. Deploy the platform:**
-```bash
-# Create namespaces
-kubectl apply -f k8s/base/
-
-# Install observability stack
-helm install kube-prom prometheus-community/kube-prometheus-stack \
-  -n monitoring -f k8s/monitoring/prometheus-values.yaml
-
-helm install loki grafana/loki-stack \
-  -n monitoring -f k8s/monitoring/loki-values.yaml
-
-# Install platform services
-source .env
-helm install postgres bitnami/postgresql -n platform \
-  --set auth.postgresPassword=$POSTGRES_PASSWORD \
-  --set auth.database=selfops \
-  --set auth.username=selfops \
-  --set auth.password=$POSTGRES_PASSWORD
-
-helm install redis bitnami/redis -n platform \
-  --set auth.enabled=false \
-  --set replica.replicaCount=0
-
-# Create secrets
-kubectl create secret generic selfops-secrets -n platform \
-  --from-literal=openrouter-api-key=$OPENROUTER_API_KEY \
-  --from-literal=postgres-password=$POSTGRES_PASSWORD \
-  --from-literal=telegram-bot-token=$TELEGRAM_BOT_TOKEN \
-  --from-literal=telegram-chat-id=$TELEGRAM_CHAT_ID
-
-# Deploy platform workloads
-kubectl apply -f k8s/platform/
-kubectl apply -f k8s/demo-app/
-kubectl apply -f k8s/monitoring/alert-rules.yaml
+# API docs:    http://localhost:8000/api/docs
+# Frontend:    http://localhost:3000
+# Grafana:     http://localhost:3001  (admin / selfops-grafana-2024)
+# Prometheus:  http://localhost:9090
+# Alertmanager: http://localhost:9093
 ```
 
 ---
 
-## API Documentation
+## How to Deploy
 
-Full API spec: [docs/api-spec.md](docs/api-spec.md)
+See `docs/architecture.md` for the full deployment guide. The short version:
 
-Live Swagger UI: `http://<server-ip>/api/docs`
-
----
-
-## Data Model
-
-Full schema documentation: [docs/data-model.md](docs/data-model.md)
+1. Provision a Hetzner CPX32 (or equivalent) running Ubuntu 24.04
+2. Install k3s: `curl -sfL https://get.k3s.io | sh -`
+3. Fill in `.env` with your API keys
+4. Run the phases in `CLAUDE.md` — each phase is idempotent
 
 ---
 
-## Project Structure
+## API Reference
 
-```
-.
-├── docs/               # Architecture, data model, API spec
-├── infra/
-│   ├── terraform/      # Hetzner infrastructure
-│   └── ansible/        # Server bootstrap + remediation playbooks
-├── k8s/
-│   ├── base/           # Namespaces
-│   ├── monitoring/     # Prometheus, Loki, alert rules
-│   ├── platform/       # All platform service manifests
-│   └── demo-app/       # Intentionally breakable demo workload
-├── services/
-│   ├── api/            # FastAPI backend
-│   ├── worker/         # ARQ background worker
-│   ├── analysis-service/ # LLM analysis microservice
-│   ├── remediation-runner/ # Ansible-based remediation executor
-│   └── frontend/       # Next.js operator dashboard
-└── scripts/            # Demo and utility scripts
-```
+Full OpenAPI docs: http://app.89.167.95.204.nip.io/api/docs
+
+Key endpoints:
+- `POST /api/alerts/webhook` — Alertmanager webhook receiver
+- `GET /api/incidents/` — List all incidents
+- `GET /api/incidents/{id}` — Incident detail with evidence, analysis, actions, audit
+- `POST /api/incidents/{id}/actions/{action_id}/run` — Trigger remediation
+- `GET /api/health` — Health check

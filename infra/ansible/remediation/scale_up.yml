@@ -1,0 +1,24 @@
+- name: Scale up deployment
+  hosts: localhost
+  connection: local
+  vars:
+    deployment_name: "{{ deployment_name }}"
+    namespace: "{{ namespace }}"
+    max_replicas: "{{ max_replicas | default(4) }}"
+  tasks:
+    - name: Get current replica count
+      command: kubectl get deployment {{ deployment_name }} -n {{ namespace }} -o jsonpath='{.spec.replicas}'
+      register: current_replicas
+
+    - name: Calculate new replica count
+      set_fact:
+        new_replicas: "{{ [current_replicas.stdout | int + 1, max_replicas | int] | min }}"
+
+    - name: Scale deployment
+      command: kubectl scale deployment {{ deployment_name }} -n {{ namespace }} --replicas={{ new_replicas }}
+      when: new_replicas | int > current_replicas.stdout | int
+
+    - name: Report no action needed
+      debug:
+        msg: "Already at maximum replicas ({{ max_replicas }}), no scaling performed"
+      when: new_replicas | int <= current_replicas.stdout | int

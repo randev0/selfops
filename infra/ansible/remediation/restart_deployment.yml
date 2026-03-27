@@ -1,0 +1,19 @@
+- name: Restart Kubernetes deployment
+  hosts: localhost
+  connection: local
+  vars:
+    deployment_name: "{{ deployment_name }}"
+    namespace: "{{ namespace }}"
+  tasks:
+    - name: Rollout restart deployment
+      command: kubectl rollout restart deployment/{{ deployment_name }} -n {{ namespace }}
+      register: restart_result
+
+    - name: Wait for rollout to complete
+      command: kubectl rollout status deployment/{{ deployment_name }} -n {{ namespace }} --timeout=120s
+      register: status_result
+      failed_when: status_result.rc != 0
+
+    - name: Show result
+      debug:
+        msg: "{{ status_result.stdout }}"

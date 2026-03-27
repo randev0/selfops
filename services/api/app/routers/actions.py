@@ -3,7 +3,7 @@ from datetime import datetime, timezone
 from typing import Any, Optional
 
 import structlog
-from arq.connections import ArqRedis, RedisSettings
+from arq.connections import RedisSettings, create_pool
 from fastapi import APIRouter, Depends, HTTPException
 from pydantic import BaseModel
 from sqlalchemy import select
@@ -61,7 +61,7 @@ def _validate_action(action_id: str, params: dict) -> tuple[bool, str]:
 async def _enqueue_job(job_name: str, *args) -> None:
     try:
         redis_settings = RedisSettings.from_dsn(settings.redis_url)
-        arq_redis = await ArqRedis.create(redis_settings)
+        arq_redis = await create_pool(redis_settings)
         await arq_redis.enqueue_job(job_name, *args)
         await arq_redis.aclose()
     except Exception as exc:

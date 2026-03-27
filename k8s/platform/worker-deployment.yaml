@@ -15,6 +15,7 @@ spec:
       labels:
         app: selfops-worker
     spec:
+      serviceAccountName: selfops-remediation
       containers:
         - name: worker
           image: docker.io/library/selfops-worker:latest
@@ -51,7 +52,7 @@ spec:
             - name: ANALYSIS_SERVICE_URL
               value: "http://selfops-analysis.platform.svc.cluster.local:8001"
             - name: FRONTEND_URL
-              value: "http://localhost:3000"
+              value: "http://app.89.167.95.204.nip.io"
           resources:
             requests:
               memory: "128Mi"

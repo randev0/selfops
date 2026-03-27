@@ -3,7 +3,8 @@ RUN apt-get update && apt-get install -y ansible curl && rm -rf /var/lib/apt/lis
 RUN curl -LO "https://dl.k8s.io/release/$(curl -L -s https://dl.k8s.io/release/stable.txt)/bin/linux/amd64/kubectl" \
     && install -o root -g root -m 0755 kubectl /usr/local/bin/kubectl
 WORKDIR /app
-COPY requirements.txt .
+COPY services/worker/requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
-COPY . .
+COPY services/worker/ .
+COPY infra/ansible/remediation/ /app/remediation/
 CMD ["python", "-m", "arq", "worker.WorkerSettings"]

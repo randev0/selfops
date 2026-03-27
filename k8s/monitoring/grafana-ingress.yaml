@@ -1,0 +1,21 @@
+---
+# Grafana ingress — grafana.selfops.steadigital.com
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: selfops-grafana-ingress
+  namespace: monitoring
+  annotations:
+    traefik.ingress.kubernetes.io/router.entrypoints: web
+spec:
+  rules:
+    - host: "grafana.selfops.steadigital.com"
+      http:
+        paths:
+          - path: /
+            pathType: Prefix
+            backend:
+              service:
+                name: kube-prom-grafana
+                port:
+                  number: 80

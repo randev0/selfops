@@ -52,7 +52,7 @@ spec:
             - name: ANALYSIS_SERVICE_URL
               value: "http://selfops-analysis.platform.svc.cluster.local:8001"
             - name: FRONTEND_URL
-              value: "http://app.89.167.95.204.nip.io"
+              value: "https://selfops.steadigital.com"
           resources:
             requests:
               memory: "128Mi"

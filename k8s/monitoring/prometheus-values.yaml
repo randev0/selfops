@@ -1,0 +1,91 @@
+grafana:
+  enabled: true
+  adminPassword: "selfops-grafana-2024"
+  service:
+    type: ClusterIP
+  persistence:
+    enabled: true
+    size: 2Gi
+  resources:
+    requests:
+      memory: "256Mi"
+      cpu: "100m"
+    limits:
+      memory: "512Mi"
+      cpu: "300m"
+
+alertmanager:
+  enabled: true
+  alertmanagerSpec:
+    resources:
+      requests:
+        memory: "64Mi"
+        cpu: "50m"
+      limits:
+        memory: "128Mi"
+        cpu: "100m"
+  config:
+    global:
+      resolve_timeout: 5m
+    route:
+      group_by: ['alertname', 'namespace']
+      group_wait: 10s
+      group_interval: 10s
+      repeat_interval: 1h
+      receiver: selfops-webhook
+      routes:
+        - receiver: "null"
+          matchers:
+            - alertname =~ "InfoInhibitor|Watchdog"
+    receivers:
+      - name: "null"
+      - name: selfops-webhook
+        webhook_configs:
+          - url: "http://selfops-api.platform.svc.cluster.local:8000/api/alerts/webhook"
+            send_resolved: true
+
+prometheus:
+  prometheusSpec:
+    retention: 7d
+    retentionSize: "8GB"
+    resources:
+      requests:
+        memory: "512Mi"
+        cpu: "200m"
+      limits:
+        memory: "1Gi"
+        cpu: "500m"
+    storageSpec:
+      volumeClaimTemplate:
+        spec:
+          accessModes: ["ReadWriteOnce"]
+          resources:
+            requests:
+              storage: 10Gi
+
+prometheusOperator:
+  resources:
+    requests:
+      memory: "128Mi"
+      cpu: "100m"
+    limits:
+      memory: "256Mi"
+      cpu: "200m"
+
+kubeStateMetrics:
+  resources:
+    requests:
+      memory: "64Mi"
+      cpu: "50m"
+    limits:
+      memory: "128Mi"
+      cpu: "100m"
+
+nodeExporter:
+  resources:
+    requests:
+      memory: "32Mi"
+      cpu: "25m"
+    limits:
+      memory: "64Mi"
+      cpu: "100m"

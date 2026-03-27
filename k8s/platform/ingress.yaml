@@ -6,7 +6,7 @@ metadata:
   name: selfops-frontend-ingress
   namespace: platform
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
   rules:
     - host: "selfops.steadigital.com"
@@ -27,10 +27,10 @@ metadata:
   name: selfops-api-ingress
   namespace: platform
   annotations:
-    traefik.ingress.kubernetes.io/router.entrypoints: web
+    traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
   rules:
-    - host: "api.selfops.steadigital.com"
+    - host: "api-selfops.steadigital.com"
       http:
         paths:
           - path: /

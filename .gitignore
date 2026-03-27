@@ -1,0 +1,15 @@
+.env
+*.env.*
+!.env.example
+node_modules/
+__pycache__/
+*.pyc
+.terraform/
+*.tfstate
+*.tfstate.backup
+.terraform.lock.hcl
+k3s.yaml
+dist/
+.next/
+*.egg-info/
+.venv/

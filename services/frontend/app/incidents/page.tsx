@@ -1,129 +1,89 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import Link from "next/link";
-import { listIncidents, type Incident } from "@/lib/api";
+import { useState, useMemo } from "react"
+import { AlertTriangle } from "lucide-react"
+import { FilterBar } from "@/components/incidents/filter-bar"
+import { IncidentsTable } from "@/components/incidents/incidents-table"
+import { Header } from "@/components/layout/header"
+import { mockIncidents } from "@/lib/mock-data"
 
-const statusColors: Record<string, string> = {
-  OPEN: "bg-red-100 text-red-800",
-  ENRICHING: "bg-yellow-100 text-yellow-800",
-  ANALYZING: "bg-blue-100 text-blue-800",
-  ACTION_REQUIRED: "bg-orange-100 text-orange-800",
-  REMEDIATING: "bg-purple-100 text-purple-800",
-  MONITORING: "bg-cyan-100 text-cyan-800",
-  RESOLVED: "bg-green-100 text-green-800",
-  CLOSED: "bg-gray-100 text-gray-800",
-  FAILED_REMEDIATION: "bg-red-200 text-red-900",
-};
-
-const severityColors: Record<string, string> = {
-  critical: "bg-red-600 text-white",
-  warning: "bg-yellow-500 text-white",
-  info: "bg-blue-500 text-white",
-  unknown: "bg-gray-400 text-white",
-};
-
-function timeAgo(dateStr: string): string {
-  const diff = Date.now() - new Date(dateStr).getTime();
-  const mins = Math.floor(diff / 60000);
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
+interface FilterState {
+  search: string
+  status: string
+  severity: string
+  service: string
+  environment: string
 }
 
-export default function IncidentsPage() {
-  const [incidents, setIncidents] = useState<Incident[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+const defaultFilters: FilterState = {
+  search: "",
+  status: "",
+  severity: "",
+  service: "",
+  environment: "",
+}
 
-  useEffect(() => {
-    const load = () =>
-      listIncidents()
-        .then(setIncidents)
-        .catch((e) => setError(e.message))
-        .finally(() => setLoading(false));
-    load();
-    const interval = setInterval(load, 10000);
-    return () => clearInterval(interval);
-  }, []);
+const allServices = [...new Set(mockIncidents.map((i) => i.service))].sort()
+
+export default function IncidentsPage() {
+  const [filters, setFilters] = useState<FilterState>(defaultFilters)
+
+  const filteredIncidents = useMemo(() => {
+    return mockIncidents.filter((inc) => {
+      if (
+        filters.search &&
+        !inc.title.toLowerCase().includes(filters.search.toLowerCase()) &&
+        !inc.service.toLowerCase().includes(filters.search.toLowerCase())
+      ) {
+        return false
+      }
+      if (filters.status && inc.status !== filters.status) return false
+      if (filters.severity && inc.severity !== filters.severity) return false
+      if (filters.service && inc.service !== filters.service) return false
+      if (filters.environment && inc.environment !== filters.environment) return false
+      return true
+    })
+  }, [filters])
+
+  const activeCount = mockIncidents.filter(
+    (i) => i.status !== "resolved" && i.status !== "failed_remediation"
+  ).length
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4">
-        <h1 className="text-xl font-bold text-gray-900">SelfOps — Incidents</h1>
-      </header>
-      <main className="p-6">
-        {loading && <p className="text-gray-500">Loading...</p>}
-        {error && <p className="text-red-600">Error: {error}</p>}
-        {!loading && !error && incidents.length === 0 && (
-          <p className="text-gray-500">No incidents found. System is healthy.</p>
-        )}
-        {incidents.length > 0 && (
-          <div className="bg-white rounded-lg shadow overflow-hidden">
-            <table className="min-w-full divide-y divide-gray-200">
-              <thead className="bg-gray-50">
-                <tr>
-                  {["Status", "Severity", "Title", "Service", "Namespace", "First Seen", "Age"].map(
-                    (h) => (
-                      <th
-                        key={h}
-                        className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider"
-                      >
-                        {h}
-                      </th>
-                    )
-                  )}
-                </tr>
-              </thead>
-              <tbody className="bg-white divide-y divide-gray-200">
-                {incidents.map((inc) => (
-                  <tr key={inc.id} className="hover:bg-gray-50">
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          statusColors[inc.status] ?? "bg-gray-100 text-gray-700"
-                        }`}
-                      >
-                        {inc.status}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3 whitespace-nowrap">
-                      <span
-                        className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
-                          severityColors[inc.severity] ?? "bg-gray-400 text-white"
-                        }`}
-                      >
-                        {inc.severity}
-                      </span>
-                    </td>
-                    <td className="px-4 py-3">
-                      <Link
-                        href={`/incidents/${inc.id}`}
-                        className="text-blue-600 hover:underline font-medium"
-                      >
-                        {inc.title}
-                      </Link>
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {inc.service_name ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {inc.namespace ?? "—"}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-600">
-                      {new Date(inc.first_seen_at).toLocaleString()}
-                    </td>
-                    <td className="px-4 py-3 text-sm text-gray-500">
-                      {timeAgo(inc.created_at)}
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+    <div className="flex flex-col min-h-full">
+      <Header title="Incidents" />
+      <div className="flex-1 p-6">
+        {/* Page header */}
+        <div className="flex items-start justify-between mb-6">
+          <div>
+            <div className="flex items-center gap-3">
+              <h2 className="text-lg font-semibold text-zinc-50">Incidents</h2>
+              <span className="flex items-center gap-1.5 text-xs font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/20 rounded-full px-2.5 py-1">
+                <AlertTriangle className="h-3 w-3" />
+                {activeCount} active
+              </span>
+            </div>
+            <p className="text-sm text-zinc-500 mt-1">
+              Monitor and respond to active incidents across your infrastructure
+            </p>
           </div>
-        )}
-      </main>
+        </div>
+
+        {/* Filter bar */}
+        <div className="mb-4">
+          <FilterBar
+            filters={filters}
+            onFiltersChange={setFilters}
+            resultCount={filteredIncidents.length}
+            services={allServices}
+          />
+        </div>
+
+        {/* Table */}
+        <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+          <IncidentsTable incidents={filteredIncidents} />
+        </div>
+      </div>
     </div>
-  );
+  )
 }

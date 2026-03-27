@@ -1,296 +1,220 @@
-"use client";
+"use client"
 
-import { useEffect, useState } from "react";
-import { useParams } from "next/navigation";
-import Link from "next/link";
-import { getIncident, runAction, type IncidentDetail } from "@/lib/api";
+import { useState } from "react"
+import { useParams } from "next/navigation"
+import Link from "next/link"
+import { ExternalLink, ChevronRight } from "lucide-react"
+import { SeverityBadge } from "@/components/ui/severity-badge"
+import { StatusBadge } from "@/components/ui/status-badge"
+import { EvidenceSection } from "@/components/incident-detail/evidence-section"
+import { AIAnalysisPanel } from "@/components/incident-detail/ai-analysis-panel"
+import { RecommendedActions } from "@/components/incident-detail/recommended-actions"
+import { IncidentTimeline } from "@/components/incident-detail/incident-timeline"
+import { AuditSummaryCard } from "@/components/incident-detail/audit-summary"
+import { Header } from "@/components/layout/header"
+import { mockIncidents } from "@/lib/mock-data"
+import { formatRelativeTime, formatAbsoluteTime, formatIncidentDuration } from "@/lib/utils"
+import { cn } from "@/lib/utils"
 
-const ALLOWED_ACTIONS = [
+type Tab = "evidence" | "timeline" | "related"
+
+const relatedAlerts = [
   {
-    id: "restart_deployment",
-    name: "Restart Deployment",
-    description: "Rollout restart of the deployment",
-    params: { deployment_name: "selfops-demo-app", namespace: "platform" },
+    name: "PodCrashLooping",
+    labels: "namespace=platform, pod=payment-worker-xxx",
+    fired: new Date(Date.now() - 1000 * 60 * 14).toISOString(),
   },
   {
-    id: "rollout_restart",
-    name: "Rollout Restart",
-    description: "Graceful rolling restart",
-    params: { deployment_name: "selfops-demo-app", namespace: "platform" },
+    name: "HighMemoryUsage",
+    labels: "namespace=platform, container=payment-worker",
+    fired: new Date(Date.now() - 1000 * 60 * 13).toISOString(),
   },
-  {
-    id: "scale_up",
-    name: "Scale Up",
-    description: "Increase replicas by 1 (max 4)",
-    params: {
-      deployment_name: "selfops-demo-app",
-      namespace: "platform",
-      max_replicas: "4",
-    },
-  },
-];
-
-type Tab = "overview" | "evidence" | "analysis" | "actions" | "audit";
+]
 
 export default function IncidentDetailPage() {
-  const params = useParams();
-  const id = params.id as string;
-  const [incident, setIncident] = useState<IncidentDetail | null>(null);
-  const [activeTab, setActiveTab] = useState<Tab>("overview");
-  const [loading, setLoading] = useState(true);
-  const [actionFeedback, setActionFeedback] = useState<string | null>(null);
+  const params = useParams()
+  const id = params.id as string
+  const [activeTab, setActiveTab] = useState<Tab>("evidence")
 
-  const load = () =>
-    getIncident(id)
-      .then(setIncident)
-      .catch(console.error)
-      .finally(() => setLoading(false));
+  const incident = mockIncidents.find((i) => i.id === id)
 
-  useEffect(() => {
-    load();
-    const interval = setInterval(load, 15000);
-    return () => clearInterval(interval);
-  }, [id]);
-
-  const handleRunAction = async (actionId: string, params: Record<string, unknown>) => {
-    try {
-      setActionFeedback("Running...");
-      await runAction(id, actionId, params);
-      setActionFeedback("Action dispatched successfully.");
-      setTimeout(() => setActionFeedback(null), 4000);
-      load();
-    } catch (e: unknown) {
-      setActionFeedback(`Error: ${e instanceof Error ? e.message : String(e)}`);
-    }
-  };
-
-  if (loading) return <div className="p-8 text-gray-500">Loading...</div>;
-  if (!incident) return <div className="p-8 text-red-600">Incident not found.</div>;
+  if (!incident) {
+    return (
+      <div className="flex flex-col min-h-full">
+        <Header title="Incidents" subtitle="Not Found" />
+        <div className="flex-1 flex flex-col items-center justify-center gap-4 p-6">
+          <div className="h-16 w-16 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+            <ChevronRight className="h-8 w-8 text-zinc-600" />
+          </div>
+          <div className="text-center">
+            <h2 className="text-lg font-semibold text-zinc-100">Incident not found</h2>
+            <p className="text-sm text-zinc-500 mt-1">
+              The incident <span className="font-mono text-zinc-400">{id}</span> does not exist.
+            </p>
+          </div>
+          <Link
+            href="/incidents"
+            className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            ← Back to incidents
+          </Link>
+        </div>
+      </div>
+    )
+  }
 
   const tabs: { key: Tab; label: string }[] = [
-    { key: "overview", label: "Overview" },
-    { key: "evidence", label: `Evidence (${incident.evidence?.length ?? 0})` },
-    { key: "analysis", label: `Analysis (${incident.analysis?.length ?? 0})` },
-    { key: "actions", label: `Actions (${incident.actions?.length ?? 0})` },
-    { key: "audit", label: `Audit (${incident.audit_logs?.length ?? 0})` },
-  ];
+    { key: "evidence", label: "Evidence" },
+    { key: "timeline", label: `Timeline (${incident.timeline.length})` },
+    { key: "related", label: "Related Alerts" },
+  ]
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="bg-white border-b px-6 py-4">
-        <div className="flex items-center gap-3">
-          <Link href="/incidents" className="text-blue-600 hover:underline text-sm">
-            ← Incidents
-          </Link>
-          <span className="text-gray-400">/</span>
-          <h1 className="font-semibold text-gray-900 truncate">{incident.title}</h1>
-          <span className="ml-auto text-xs bg-gray-100 px-2 py-1 rounded font-mono text-gray-500">
-            {incident.status}
-          </span>
-          <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded font-semibold">
-            {incident.severity}
-          </span>
-        </div>
-      </header>
+    <div className="flex flex-col min-h-full">
+      <Header title="Incidents" subtitle={incident.service} />
+      <div className="flex-1 flex min-h-0">
+        {/* Main content */}
+        <div className="flex-1 overflow-y-auto">
+          <div className="p-6 space-y-5 max-w-4xl">
+            {/* Breadcrumb */}
+            <div className="flex items-center gap-1.5 text-xs text-zinc-500">
+              <Link href="/incidents" className="hover:text-zinc-300 transition-colors">
+                Incidents
+              </Link>
+              <ChevronRight className="h-3 w-3" />
+              <span className="text-zinc-400 font-medium truncate max-w-xs">{incident.title}</span>
+            </div>
 
-      <div className="border-b bg-white px-6">
-        <nav className="flex gap-1">
-          {tabs.map((t) => (
-            <button
-              key={t.key}
-              onClick={() => setActiveTab(t.key)}
-              className={`px-4 py-3 text-sm font-medium border-b-2 transition-colors ${
-                activeTab === t.key
-                  ? "border-blue-600 text-blue-600"
-                  : "border-transparent text-gray-500 hover:text-gray-700"
-              }`}
-            >
-              {t.label}
-            </button>
-          ))}
-        </nav>
-      </div>
-
-      <main className="p-6 max-w-5xl">
-        {activeTab === "overview" && (
-          <div className="bg-white rounded-lg shadow p-6 grid grid-cols-2 gap-4 text-sm">
-            {[
-              ["ID", incident.id],
-              ["Status", incident.status],
-              ["Severity", incident.severity],
-              ["Service", incident.service_name ?? "—"],
-              ["Namespace", incident.namespace ?? "—"],
-              ["First Seen", new Date(incident.first_seen_at).toLocaleString()],
-              ["Last Seen", new Date(incident.last_seen_at).toLocaleString()],
-              ["Created", new Date(incident.created_at).toLocaleString()],
-            ].map(([label, value]) => (
-              <div key={label}>
-                <dt className="font-medium text-gray-500">{label}</dt>
-                <dd className="mt-1 text-gray-900 font-mono text-xs break-all">{value}</dd>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === "evidence" && (
-          <div className="space-y-3">
-            {incident.evidence?.length === 0 && (
-              <p className="text-gray-500">No evidence collected yet.</p>
-            )}
-            {incident.evidence?.map((ev) => (
-              <div key={ev.id} className="bg-white rounded-lg shadow p-4">
-                <div className="flex items-center gap-2 mb-2">
-                  <span className="text-xs font-semibold bg-blue-100 text-blue-800 px-2 py-1 rounded uppercase">
-                    {ev.evidence_type}
-                  </span>
-                  <span className="text-xs text-gray-500">
-                    {new Date(ev.captured_at).toLocaleString()}
-                  </span>
-                </div>
-                <pre className="text-xs bg-gray-50 p-3 rounded overflow-auto max-h-48 text-gray-700">
-                  {JSON.stringify(ev.content, null, 2)}
-                </pre>
-              </div>
-            ))}
-          </div>
-        )}
-
-        {activeTab === "analysis" && (
-          <div className="space-y-3">
-            {incident.analysis?.length === 0 && (
-              <p className="text-gray-500">No analysis available yet.</p>
-            )}
-            {incident.analysis?.map((a) => (
-              <div key={a.id} className="bg-white rounded-lg shadow p-6 space-y-3">
-                <div className="flex items-center gap-2">
-                  <span className="text-xs text-gray-500 font-mono">{a.model_name}</span>
-                  {a.confidence_score != null && (
-                    <span className="text-xs bg-green-100 text-green-800 px-2 py-1 rounded">
-                      {Math.round(a.confidence_score * 100)}% confidence
-                    </span>
+            {/* Incident header card */}
+            <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+              <h1 className="text-xl font-bold text-zinc-50 mb-3 leading-snug">
+                {incident.title}
+              </h1>
+              <div className="flex flex-wrap items-center gap-2 mb-4">
+                <SeverityBadge severity={incident.severity} />
+                <StatusBadge status={incident.status} />
+                <span className="font-mono text-xs text-zinc-400 bg-zinc-800 rounded px-2 py-0.5">
+                  {incident.service}
+                </span>
+                <span className="text-xs text-zinc-500 bg-zinc-800/50 rounded px-2 py-0.5">
+                  {incident.namespace}
+                </span>
+                <span
+                  className={cn(
+                    "text-xs rounded px-2 py-0.5 font-medium",
+                    incident.environment === "production"
+                      ? "bg-green-500/10 text-green-400"
+                      : "bg-yellow-500/10 text-yellow-400"
                   )}
-                  {a.escalate && (
-                    <span className="text-xs bg-red-100 text-red-800 px-2 py-1 rounded font-semibold">
-                      ESCALATE
-                    </span>
-                  )}
-                </div>
-                {a.summary && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Summary</p>
-                    <p className="text-sm text-gray-800">{a.summary}</p>
-                  </div>
-                )}
-                {a.probable_cause && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Probable Cause</p>
-                    <p className="text-sm text-gray-800">{a.probable_cause}</p>
-                  </div>
-                )}
-                {a.recommendation && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Recommendation</p>
-                    <p className="text-sm text-gray-800">{a.recommendation}</p>
-                  </div>
-                )}
-                {a.recommended_action_id && (
-                  <div>
-                    <p className="text-xs font-semibold text-gray-500 uppercase mb-1">Recommended Action</p>
-                    <code className="text-xs bg-gray-100 px-2 py-1 rounded">{a.recommended_action_id}</code>
-                  </div>
-                )}
+                >
+                  {incident.environment}
+                </span>
               </div>
-            ))}
-          </div>
-        )}
+              <div className="flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-500">
+                <span>
+                  Created:{" "}
+                  <span className="text-zinc-400">{formatAbsoluteTime(incident.createdAt)}</span>
+                </span>
+                <span>
+                  Last seen:{" "}
+                  <span className="text-zinc-400">{formatRelativeTime(incident.lastSeen)}</span>
+                </span>
+                <span>
+                  Duration:{" "}
+                  <span className="text-zinc-400">{formatIncidentDuration(incident.createdAt)}</span>
+                </span>
+                <a
+                  href="#"
+                  className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors ml-auto"
+                >
+                  Open in Grafana
+                  <ExternalLink className="h-3 w-3" />
+                </a>
+              </div>
+            </div>
 
-        {activeTab === "actions" && (
-          <div className="space-y-4">
-            {actionFeedback && (
-              <div className="bg-blue-50 border border-blue-200 text-blue-800 px-4 py-3 rounded text-sm">
-                {actionFeedback}
+            {/* AI Summary card */}
+            <div className="bg-zinc-900/50 border border-blue-500/10 rounded-xl p-5 bg-[radial-gradient(ellipse_at_top_left,_rgba(59,130,246,0.05)_0%,_transparent_60%)]">
+              <div className="flex items-center gap-2 mb-2">
+                <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
+                  AI Summary
+                </span>
               </div>
-            )}
-            <div className="bg-white rounded-lg shadow p-4">
-              <h3 className="font-semibold text-gray-900 mb-3">Available Actions</h3>
-              <div className="space-y-2">
-                {ALLOWED_ACTIONS.map((action) => (
-                  <div
-                    key={action.id}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded"
+              <p className="text-sm text-zinc-300 leading-relaxed">{incident.summary}</p>
+            </div>
+
+            {/* Tabs */}
+            <div>
+              <div className="flex gap-1 border-b border-zinc-800 mb-5">
+                {tabs.map((tab) => (
+                  <button
+                    key={tab.key}
+                    onClick={() => setActiveTab(tab.key)}
+                    className={cn(
+                      "px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+                      activeTab === tab.key
+                        ? "border-blue-500 text-blue-400"
+                        : "border-transparent text-zinc-500 hover:text-zinc-300"
+                    )}
                   >
-                    <div>
-                      <p className="text-sm font-medium text-gray-900">{action.name}</p>
-                      <p className="text-xs text-gray-500">{action.description}</p>
-                    </div>
-                    <button
-                      onClick={() => handleRunAction(action.id, action.params)}
-                      className="text-xs bg-blue-600 text-white px-3 py-2 rounded hover:bg-blue-700 transition-colors"
-                    >
-                      Run
-                    </button>
-                  </div>
+                    {tab.label}
+                  </button>
                 ))}
               </div>
-            </div>
-            {incident.actions?.length > 0 && (
-              <div className="bg-white rounded-lg shadow p-4">
-                <h3 className="font-semibold text-gray-900 mb-3">Action History</h3>
-                <div className="space-y-2">
-                  {incident.actions.map((a) => (
-                    <div key={a.id} className="p-3 border rounded text-sm">
-                      <div className="flex items-center gap-2 mb-1">
-                        <span className="font-medium">{a.action_name}</span>
-                        <span
-                          className={`text-xs px-2 py-0.5 rounded-full ${
-                            a.status === "SUCCESS"
-                              ? "bg-green-100 text-green-800"
-                              : a.status === "FAILED"
-                              ? "bg-red-100 text-red-800"
-                              : a.status === "RUNNING"
-                              ? "bg-yellow-100 text-yellow-800"
-                              : "bg-gray-100 text-gray-700"
-                          }`}
-                        >
-                          {a.status}
-                        </span>
-                      </div>
-                      {a.result_summary && (
-                        <pre className="text-xs text-gray-600 mt-1 whitespace-pre-wrap">
-                          {a.result_summary}
-                        </pre>
-                      )}
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
-          </div>
-        )}
 
-        {activeTab === "audit" && (
-          <div className="bg-white rounded-lg shadow p-4">
-            {incident.audit_logs?.length === 0 && (
-              <p className="text-gray-500 text-sm">No audit entries yet.</p>
-            )}
-            <div className="space-y-2">
-              {incident.audit_logs?.map((log) => (
-                <div key={log.id} className="flex gap-4 p-3 border-b last:border-0 text-sm">
-                  <div className="text-xs text-gray-400 whitespace-nowrap pt-0.5">
-                    {new Date(log.created_at).toLocaleString()}
-                  </div>
-                  <div>
-                    <span className="font-medium text-gray-700">{log.event_type}</span>
-                    <span className="text-gray-400 mx-2">·</span>
-                    <span className="text-gray-600">{log.message}</span>
-                    <span className="text-gray-400 text-xs ml-2">by {log.actor_id}</span>
-                  </div>
+              {activeTab === "evidence" && <EvidenceSection incident={incident} />}
+
+              {activeTab === "timeline" && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+                  <IncidentTimeline incident={incident} />
                 </div>
-              ))}
+              )}
+
+              {activeTab === "related" && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
+                  <table className="w-full text-xs">
+                    <thead>
+                      <tr className="border-b border-zinc-800">
+                        <th className="text-left px-4 py-3 text-zinc-500 font-medium uppercase tracking-wider">
+                          Alert Name
+                        </th>
+                        <th className="text-left px-4 py-3 text-zinc-500 font-medium uppercase tracking-wider hidden md:table-cell">
+                          Labels
+                        </th>
+                        <th className="text-left px-4 py-3 text-zinc-500 font-medium uppercase tracking-wider">
+                          Fired
+                        </th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-zinc-800/50">
+                      {relatedAlerts.map((alert) => (
+                        <tr key={alert.name} className="hover:bg-zinc-800/30 transition-colors">
+                          <td className="px-4 py-3 font-mono font-semibold text-zinc-200">
+                            {alert.name}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500 hidden md:table-cell font-mono">
+                            {alert.labels}
+                          </td>
+                          <td className="px-4 py-3 text-zinc-500">
+                            {formatRelativeTime(alert.fired)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              )}
             </div>
           </div>
-        )}
-      </main>
+        </div>
+
+        {/* Right sidebar */}
+        <div className="w-80 shrink-0 overflow-y-auto border-l border-zinc-800 p-4 space-y-4 hidden lg:block">
+          <AIAnalysisPanel incident={incident} />
+          <RecommendedActions incident={incident} />
+          <AuditSummaryCard incident={incident} />
+        </div>
+      </div>
     </div>
-  );
+  )
 }

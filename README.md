@@ -178,6 +178,8 @@ curl -X POST "https://api-selfops.steadigital.com/api/incidents/$INCIDENT_ID/act
 
 The agent generates a YAML patch (memory 1.5× bump), opens a GitHub PR, and sends a Telegram notification with the PR link. After merging, call `/merged` to apply and start verification.
 
+![Telegram Notification](docs/screenshots/telegram.png)
+
 ### Scenario 3 — CPU Spike
 
 ```bash
@@ -190,8 +192,7 @@ The agent generates a YAML patch (memory 1.5× bump), opens a GitHub PR, and sen
 
 ## Agent Trace
 
-<!-- 📸 SCREENSHOT NEEDED: The Agent Trace tab open on an incident, showing collapsed/expanded thought steps, SOP context block (yellow), action steps (orange), and observation steps (green). Save as docs/screenshots/agent-trace.png -->
-> **[Screenshot: Agent Trace tab]** — _add `docs/screenshots/agent-trace.png` here_
+![Agent Trace tab](docs/screenshots/agent-trace.png)
 
 Every analysis stores a full `investigation_log` with each step the ReAct agent took:
 
@@ -304,9 +305,9 @@ A summary of the visuals required to complete this README:
 | # | File | What to capture |
 |---|---|---|
 | 1 | `docs/screenshots/dashboard.png` | ![Dashboard](docs/screenshots/dashboard.png) |
-| 2 | `docs/screenshots/agent-trace.png` | Agent Trace tab on any analyzed incident — show at least one expanded thought step, one orange action step, and the yellow SOP context block |
+| 2 | `docs/screenshots/agent-trace.png` | ![Agent Trace tab](docs/screenshots/agent-trace.png) |
 | 3 | `docs/screenshots/gitops-pr.png` | ![GitOps PR](docs/screenshots/gitops-pr.png) |
-| 4 | `docs/screenshots/telegram.png` | Telegram notification showing incident title, AI summary, and PR link |
+| 4 | `docs/screenshots/telegram.png` | ![Telegram Notification](docs/screenshots/telegram.png) |
 | 5 | `docs/architecture.png` | Architecture diagram (see ASCII art above as source — redraw in Excalidraw or similar) |
 | 6 | `docs/screenshots/demo-crash.gif` | _(Optional but high impact)_ Screen recording of Scenario 1 end-to-end — crash trigger to `RESOLVED` |
 

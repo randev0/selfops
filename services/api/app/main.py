@@ -9,6 +9,9 @@ app = FastAPI(
     title="SelfOps API",
     description="AI-powered self-healing infrastructure platform API",
     version="1.0.0",
+    docs_url="/api/docs",
+    redoc_url="/api/redoc",
+    openapi_url="/api/openapi.json",
 )
 
 app.add_middleware(

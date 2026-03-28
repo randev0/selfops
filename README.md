@@ -116,18 +116,7 @@ ARQ Worker: analyze_incident                              │
 
 ## Architecture Diagram
 
-<!-- 📸 DIAGRAM NEEDED: A clean system architecture diagram showing all components and their connections. The ASCII diagram above can be used as the source of truth. Recommended tools: Excalidraw, Miro, Whimsical, or draw.io. Save as docs/architecture.png (1400×900 recommended, dark or light background). Key components to show:
-  - Prometheus / Alertmanager → FastAPI webhook
-  - FastAPI → PostgreSQL + ARQ (Redis)
-  - ARQ Worker → Analysis Service → MCP Server (dashed box grouping)
-  - MCP Server ↔ Prometheus/Loki
-  - Analysis Service → SOP files (BM25)
-  - Two parallel paths: DIRECT_ACTION (Ansible) and GITOPS_PR (GitHub API)
-  - verify_remediation loop
-  - Telegram output
-  - Next.js frontend reading from FastAPI
--->
-> **[Architecture Diagram]** — _add `docs/architecture.png` here_
+![Architecture Diagram](docs/architecture.png)
 
 ---
 

@@ -107,6 +107,8 @@ function PRCard({ action }: { action: RemediationAction }) {
   )
 }
 
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
 export function AgentTrace({ incidentId }: AgentTraceProps) {
   const [data, setData] = useState<{
     steps: InvestigationStep[]
@@ -119,6 +121,10 @@ export function AgentTrace({ incidentId }: AgentTraceProps) {
   const [error, setError] = useState<string | null>(null)
 
   useEffect(() => {
+    if (!UUID_RE.test(incidentId)) {
+      setLoading(false)
+      return
+    }
     getIncident(incidentId)
       .then((incident) => {
         const latestAnalysis = incident.analysis_results?.[0] ?? null
@@ -145,6 +151,14 @@ export function AgentTrace({ incidentId }: AgentTraceProps) {
           <div key={i} className="h-9 rounded-lg bg-zinc-800" />
         ))}
       </div>
+    )
+  }
+
+  if (!UUID_RE.test(incidentId)) {
+    return (
+      <p className="text-xs text-zinc-500 italic">
+        Agent trace is only available for real incidents. Navigate to a live incident from the API to view the investigation log.
+      </p>
     )
   }
 

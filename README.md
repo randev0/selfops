@@ -8,8 +8,7 @@ SelfOps watches your Kubernetes cluster, detects failures, runs an LLM-powered i
 
 ---
 
-<!-- 📸 SCREENSHOT NEEDED: Full-page screenshot of the incidents list dashboard (selfops.steadigital.com/incidents) showing a few real incidents with status badges and severity. Save as docs/screenshots/dashboard.png -->
-> **[Screenshot: Incidents Dashboard]** — _add `docs/screenshots/dashboard.png` here_
+![Dashboard](docs/screenshots/dashboard.png)
 
 ---
 
@@ -154,8 +153,7 @@ ARQ Worker: analyze_incident                              │
 
 ### Scenario 2 — GitOps PR Remediation _(recommended for demos)_
 
-<!-- 📸 SCREENSHOT NEEDED: The GitHub PR opened by SelfOps, showing the AI-generated YAML diff with memory limit bump. Save as docs/screenshots/gitops-pr.png -->
-> **[Screenshot: GitHub PR with AI patch]** — _add `docs/screenshots/gitops-pr.png` here_
+![GitHub PR with AI patch](docs/screenshots/gitops-pr.png)
 
 ```bash
 # Trigger a memory incident
@@ -305,9 +303,9 @@ A summary of the visuals required to complete this README:
 
 | # | File | What to capture |
 |---|---|---|
-| 1 | `docs/screenshots/dashboard.png` | Incidents list page at `selfops.steadigital.com/incidents` — a few real incidents, status/severity badges visible |
+| 1 | `docs/screenshots/dashboard.png` | ![Dashboard](docs/screenshots/dashboard.png) |
 | 2 | `docs/screenshots/agent-trace.png` | Agent Trace tab on any analyzed incident — show at least one expanded thought step, one orange action step, and the yellow SOP context block |
-| 3 | `docs/screenshots/gitops-pr.png` | GitHub PR opened by SelfOps — the Files Changed tab showing the AI-generated YAML diff (memory bump) |
+| 3 | `docs/screenshots/gitops-pr.png` | ![GitOps PR](docs/screenshots/gitops-pr.png) |
 | 4 | `docs/screenshots/telegram.png` | Telegram notification showing incident title, AI summary, and PR link |
 | 5 | `docs/architecture.png` | Architecture diagram (see ASCII art above as source — redraw in Excalidraw or similar) |
 | 6 | `docs/screenshots/demo-crash.gif` | _(Optional but high impact)_ Screen recording of Scenario 1 end-to-end — crash trigger to `RESOLVED` |

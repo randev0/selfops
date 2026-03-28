@@ -216,6 +216,7 @@ class AnalysisResult(Base):
     confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     escalate: Mapped[Optional[bool]] = mapped_column(Boolean)
     raw_output: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    investigation_log: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -506,7 +507,7 @@ async def analyze_incident(ctx: dict, incident_id: str) -> None:
         }
 
         analysis_response = None
-        async with httpx.AsyncClient(timeout=60.0) as client:
+        async with httpx.AsyncClient(timeout=120.0) as client:
             try:
                 resp = await client.post(
                     f"{config.analysis_service_url}/analyze",
@@ -531,14 +532,15 @@ async def analyze_incident(ctx: dict, incident_id: str) -> None:
             incident_id=incident.id,
             model_provider="openrouter",
             model_name="anthropic/claude-3-haiku",
-            prompt_version="v1",
+            prompt_version="v2-react",
             summary=analysis_response.get("summary", ""),
             probable_cause=analysis_response.get("probable_cause", ""),
             recommendation=analysis_response.get("recommendation", ""),
             recommended_action_id=analysis_response.get("recommended_action_id"),
             confidence_score=analysis_response.get("confidence", 0.0),
             escalate=analysis_response.get("escalate", False),
-            raw_output=analysis_response,
+            raw_output=analysis_response.get("raw_output", analysis_response),
+            investigation_log=analysis_response.get("investigation_log"),
             created_at=now,
         )
         db.add(analysis_row)

@@ -1,3 +1,38 @@
+---
+# ServiceAccount for the analysis service (needs k8s API read access for the get_k8s_resource_yaml tool)
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: selfops-analysis
+  namespace: platform
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: selfops-analysis-reader
+  namespace: platform
+rules:
+  - apiGroups: ["apps"]
+    resources: ["deployments", "replicasets"]
+    verbs: ["get", "list"]
+  - apiGroups: [""]
+    resources: ["pods", "services", "configmaps"]
+    verbs: ["get", "list"]
+---
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: selfops-analysis-reader
+  namespace: platform
+subjects:
+  - kind: ServiceAccount
+    name: selfops-analysis
+    namespace: platform
+roleRef:
+  kind: Role
+  name: selfops-analysis-reader
+  apiGroup: rbac.authorization.k8s.io
+---
 apiVersion: apps/v1
 kind: Deployment
 metadata:
@@ -15,6 +50,7 @@ spec:
       labels:
         app: selfops-analysis
     spec:
+      serviceAccountName: selfops-analysis
       containers:
         - name: analysis
           image: docker.io/library/selfops-analysis:latest
@@ -27,24 +63,28 @@ spec:
                 secretKeyRef:
                   name: selfops-secrets
                   key: openrouter-api-key
+            - name: PROMETHEUS_URL
+              value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+            - name: LOKI_URL
+              value: "http://loki.monitoring.svc.cluster.local:3100"
           resources:
             requests:
-              memory: "128Mi"
-              cpu: "50m"
-            limits:
               memory: "256Mi"
-              cpu: "200m"
+              cpu: "100m"
+            limits:
+              memory: "768Mi"
+              cpu: "500m"
           livenessProbe:
             httpGet:
               path: /health
               port: 8001
-            initialDelaySeconds: 10
+            initialDelaySeconds: 15
             periodSeconds: 20
           readinessProbe:
             httpGet:
               path: /health
               port: 8001
-            initialDelaySeconds: 5
+            initialDelaySeconds: 10
             periodSeconds: 10
 ---
 apiVersion: v1

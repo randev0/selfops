@@ -23,3 +23,5 @@ class AnalysisResponse(BaseModel):
     confidence: float
     escalate: bool
     raw_output: dict
+    # ReAct agent thought chain: list of {type, content/tool/input} dicts
+    investigation_log: Optional[List[dict]] = None

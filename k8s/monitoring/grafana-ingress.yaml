@@ -1,5 +1,5 @@
 ---
-# Grafana ingress — grafana.selfops.steadigital.com
+# Grafana ingress — grafana-selfops.steadigital.com
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
@@ -8,6 +8,10 @@ metadata:
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
 spec:
+  tls:
+    - hosts:
+        - grafana-selfops.steadigital.com
+      secretName: cloudflare-origin-tls
   rules:
     - host: "grafana-selfops.steadigital.com"
       http:

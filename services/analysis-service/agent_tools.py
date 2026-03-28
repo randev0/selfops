@@ -56,13 +56,22 @@ def fetch_prometheus_metrics(query: str, duration: str = "5m") -> str:
                 params={"query": query},
             )
             resp.raise_for_status()
-            results = resp.json().get("data", {}).get("result", [])
+            data = resp.json().get("data", {})
+            result_type = data.get("resultType", "vector")
+            results = data.get("result", [])
 
         if not results:
             return "No data returned for this PromQL query."
 
+        # Scalar: result is [timestamp_float, "value_string"]
+        if result_type == "scalar":
+            return f"scalar: {results[1] if len(results) > 1 else results}"
+
         lines = []
         for item in results[:15]:
+            if not isinstance(item, dict):
+                lines.append(str(item))
+                continue
             metric = item.get("metric", {})
             value = item.get("value", [None, "N/A"])[1]
             label_str = ", ".join(f'{k}="{v}"' for k, v in metric.items())
@@ -88,6 +97,8 @@ def fetch_loki_logs(query: str, limit: int = 30) -> str:
     Returns the most recent log lines joined by newlines.
     """
     try:
+        # Strip accidental surrounding quotes the LLM sometimes adds
+        query = query.strip("'\"")
         now = datetime.now(timezone.utc)
         start_ns = int((now - timedelta(minutes=10)).timestamp() * 1_000_000_000)
         end_ns = int(now.timestamp() * 1_000_000_000)
@@ -103,7 +114,8 @@ def fetch_loki_logs(query: str, limit: int = 30) -> str:
                     "direction": "backward",
                 },
             )
-            resp.raise_for_status()
+            if not resp.is_success:
+                return f"Loki returned {resp.status_code}: {resp.text[:200]}"
             streams = resp.json().get("data", {}).get("result", [])
 
         lines = []
@@ -123,17 +135,27 @@ def fetch_loki_logs(query: str, limit: int = 30) -> str:
 
 
 @tool
-def get_k8s_resource_yaml(kind: str, name: str, namespace: str) -> str:
+def get_k8s_resource_yaml(resource_path: str) -> str:
     """Fetch the live state of a Kubernetes resource from the cluster API.
 
     Args:
-        kind: Resource kind — one of: deployment, replicaset, pod, service, configmap
-        name: Exact resource name (e.g. 'selfops-demo-app')
-        namespace: Kubernetes namespace (e.g. 'platform')
+        resource_path: Slash-separated string in the format 'kind/name/namespace'.
+            Examples:
+              'deployment/selfops-demo-app/platform'
+              'pod/selfops-demo-app-xyz-abc/platform'
+            Supported kinds: deployment, replicaset, pod, service, configmap
 
-    Returns a JSON summary of the resource's status, replicas, conditions,
-    and labels. Truncated to 2000 characters.
+    Returns a JSON summary of the resource's status, replicas, and conditions.
     """
+    resource_path = resource_path.strip().strip("'\"")
+    parts = resource_path.split("/")
+    if len(parts) != 3:
+        return (
+            "Invalid format. Expected 'kind/name/namespace', "
+            f"got: '{resource_path}'. "
+            "Example: 'deployment/selfops-demo-app/platform'"
+        )
+    kind, name, namespace = parts
     kind_lower = kind.lower()
     path_template = _KIND_PATHS.get(kind_lower)
     if not path_template:

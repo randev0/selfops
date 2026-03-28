@@ -168,6 +168,7 @@ class AnalysisResult(Base):
     confidence_score: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     escalate: Mapped[Optional[bool]] = mapped_column(Boolean, default=False)
     raw_output: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    investigation_log: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=func.now()
     )

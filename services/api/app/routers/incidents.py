@@ -83,6 +83,7 @@ def _analysis_to_dict(ar: AnalysisResult) -> dict:
         "recommended_action_id": ar.recommended_action_id,
         "confidence_score": ar.confidence_score,
         "escalate": ar.escalate,
+        "investigation_log": ar.investigation_log,
         "created_at": ar.created_at.isoformat() if ar.created_at else None,
     }
 

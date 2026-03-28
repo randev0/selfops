@@ -11,12 +11,13 @@ import { AIAnalysisPanel } from "@/components/incident-detail/ai-analysis-panel"
 import { RecommendedActions } from "@/components/incident-detail/recommended-actions"
 import { IncidentTimeline } from "@/components/incident-detail/incident-timeline"
 import { AuditSummaryCard } from "@/components/incident-detail/audit-summary"
+import { AgentTrace } from "@/components/incident-detail/agent-trace"
 import { Header } from "@/components/layout/header"
 import { mockIncidents } from "@/lib/mock-data"
 import { formatRelativeTime, formatAbsoluteTime, formatIncidentDuration } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 
-type Tab = "evidence" | "timeline" | "related"
+type Tab = "evidence" | "timeline" | "related" | "agent-trace"
 
 const relatedAlerts = [
   {
@@ -67,6 +68,7 @@ export default function IncidentDetailPage() {
     { key: "evidence", label: "Evidence" },
     { key: "timeline", label: `Timeline (${incident.timeline.length})` },
     { key: "related", label: "Related Alerts" },
+    { key: "agent-trace", label: "Agent Trace" },
   ]
 
   return (
@@ -167,6 +169,12 @@ export default function IncidentDetailPage() {
               {activeTab === "timeline" && (
                 <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
                   <IncidentTimeline incident={incident} />
+                </div>
+              )}
+
+              {activeTab === "agent-trace" && (
+                <div className="bg-zinc-900 border border-zinc-800 rounded-xl p-5">
+                  <AgentTrace incidentId={id} />
                 </div>
               )}
 

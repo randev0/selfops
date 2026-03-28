@@ -67,6 +67,8 @@ spec:
               value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
             - name: LOKI_URL
               value: "http://loki.monitoring.svc.cluster.local:3100"
+            - name: MCP_SERVER_URL
+              value: "http://selfops-mcp.platform.svc.cluster.local:3001"
           resources:
             requests:
               memory: "256Mi"

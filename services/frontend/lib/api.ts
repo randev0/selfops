@@ -19,6 +19,13 @@ export interface Evidence {
   captured_at: string;
 }
 
+export interface InvestigationStep {
+  type: "thought" | "action" | "observation" | "conclusion" | "sop_context" | "error";
+  content?: string;
+  tool?: string;
+  input?: string;
+}
+
 export interface Analysis {
   id: string;
   model_name: string;
@@ -28,6 +35,7 @@ export interface Analysis {
   recommended_action_id: string | null;
   confidence_score: number | null;
   escalate: boolean | null;
+  investigation_log: InvestigationStep[] | null;
   created_at: string;
 }
 
@@ -40,6 +48,11 @@ export interface RemediationAction {
   started_at: string | null;
   completed_at: string | null;
   result_summary: string | null;
+  remediation_strategy: string | null;
+  pr_url: string | null;
+  pr_number: number | null;
+  pr_branch: string | null;
+  patch_file_path: string | null;
   created_at: string;
 }
 
@@ -55,8 +68,8 @@ export interface AuditLog {
 export interface IncidentDetail extends Incident {
   alert_events: Record<string, unknown>[];
   evidence: Evidence[];
-  analysis: Analysis[];
-  actions: RemediationAction[];
+  analysis_results: Analysis[];
+  remediation_actions: RemediationAction[];
   audit_logs: AuditLog[];
 }
 

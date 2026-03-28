@@ -8,3 +8,4 @@ tenacity==8.2.3
 langchain==0.2.16
 langchain-openai==0.1.23
 langchain-core==0.2.38
+rank-bm25==0.2.2

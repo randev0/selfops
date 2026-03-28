@@ -1,0 +1,61 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: selfops-mcp
+  namespace: platform
+  labels:
+    app: selfops-mcp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: selfops-mcp
+  template:
+    metadata:
+      labels:
+        app: selfops-mcp
+    spec:
+      containers:
+        - name: mcp
+          image: docker.io/library/selfops-mcp:latest
+          imagePullPolicy: Never
+          ports:
+            - containerPort: 3001
+          env:
+            - name: PROMETHEUS_URL
+              value: "http://prometheus-operated.monitoring.svc.cluster.local:9090"
+            - name: LOKI_URL
+              value: "http://loki.monitoring.svc.cluster.local:3100"
+            - name: PORT
+              value: "3001"
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "256Mi"
+              cpu: "200m"
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 10
+            periodSeconds: 20
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 3001
+            initialDelaySeconds: 5
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: selfops-mcp
+  namespace: platform
+spec:
+  selector:
+    app: selfops-mcp
+  ports:
+    - port: 3001
+      targetPort: 3001

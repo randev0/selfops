@@ -21,6 +21,7 @@ from langchain_openai import ChatOpenAI
 
 from agent_tools import fetch_loki_logs, fetch_prometheus_metrics, get_k8s_resource_yaml
 from schemas import AnalysisRequest, AnalysisResponse
+from sop_retriever import get_retriever
 
 log = structlog.get_logger()
 
@@ -165,6 +166,20 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
         f"{a['action_id']} ({a['name']})" for a in request.allowed_actions
     )
 
+    # Retrieve relevant company SOPs for this incident
+    sop_query = (
+        f"{request.incident_title} {request.alert_name} "
+        f"{request.service_name or ''} {request.namespace or ''}"
+    )
+    sop_context = get_retriever().format_for_prompt(sop_query)
+
+    # Log SOP context into investigation steps for audit trail
+    if sop_context:
+        capture.steps.append({
+            "type": "sop_context",
+            "content": sop_context.strip(),
+        })
+
     incident_context = (
         f"Title: {request.incident_title}\n"
         f"Service: {request.service_name or 'unknown'} | "
@@ -172,10 +187,12 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
         f"Alert: {request.alert_name}\n"
         f"Labels: {json.dumps(request.alert_labels)}\n"
         f"Annotations: {json.dumps(request.alert_annotations)}\n"
-        f"Available remediation actions: {allowed_str}\n\n"
-        f"Start by querying Prometheus for relevant metrics, "
+        f"Available remediation actions: {allowed_str}\n"
+        f"{sop_context}"
+        f"\nStart by querying Prometheus for relevant metrics, "
         f"then check Loki for error logs, "
-        f"then fetch the Kubernetes resource state if needed."
+        f"then fetch the Kubernetes resource state if needed. "
+        f"If SOPs are provided above, your recommendation MUST cite them."
     )
 
     try:

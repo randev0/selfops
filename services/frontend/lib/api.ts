@@ -7,9 +7,13 @@ export interface Incident {
   severity: string;
   service_name: string | null;
   namespace: string | null;
+  environment: string | null;
+  fingerprint: string | null;
   first_seen_at: string;
   last_seen_at: string;
+  resolved_at: string | null;
   created_at: string;
+  updated_at: string | null;
 }
 
 export interface Evidence {

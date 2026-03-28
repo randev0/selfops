@@ -1,11 +1,11 @@
 "use client"
 
-import { useState, useMemo } from "react"
+import { useState, useMemo, useEffect } from "react"
 import { AlertTriangle } from "lucide-react"
 import { FilterBar } from "@/components/incidents/filter-bar"
 import { IncidentsTable } from "@/components/incidents/incidents-table"
 import { Header } from "@/components/layout/header"
-import { mockIncidents } from "@/lib/mock-data"
+import { listIncidents, type Incident } from "@/lib/api"
 
 interface FilterState {
   search: string
@@ -23,45 +23,58 @@ const defaultFilters: FilterState = {
   environment: "",
 }
 
-const allServices = [...new Set(mockIncidents.map((i) => i.service))].sort()
-
 export default function IncidentsPage() {
+  const [incidents, setIncidents] = useState<Incident[]>([])
+  const [loading, setLoading] = useState(true)
+  const [error, setError] = useState<string | null>(null)
   const [filters, setFilters] = useState<FilterState>(defaultFilters)
 
+  useEffect(() => {
+    listIncidents(100)
+      .then(setIncidents)
+      .catch((err) => setError(String(err)))
+      .finally(() => setLoading(false))
+  }, [])
+
+  const allServices = useMemo(
+    () => [...new Set(incidents.map((i) => i.service_name).filter(Boolean))].sort() as string[],
+    [incidents]
+  )
+
   const filteredIncidents = useMemo(() => {
-    return mockIncidents.filter((inc) => {
+    return incidents.filter((inc) => {
       if (
         filters.search &&
         !inc.title.toLowerCase().includes(filters.search.toLowerCase()) &&
-        !inc.service.toLowerCase().includes(filters.search.toLowerCase())
+        !(inc.service_name ?? "").toLowerCase().includes(filters.search.toLowerCase())
       ) {
         return false
       }
-      if (filters.status && inc.status !== filters.status) return false
-      if (filters.severity && inc.severity !== filters.severity) return false
-      if (filters.service && inc.service !== filters.service) return false
-      if (filters.environment && inc.environment !== filters.environment) return false
+      if (filters.status && inc.status?.toLowerCase() !== filters.status.toLowerCase()) return false
+      if (filters.severity && inc.severity?.toLowerCase() !== filters.severity.toLowerCase()) return false
+      if (filters.service && inc.service_name !== filters.service) return false
       return true
     })
-  }, [filters])
+  }, [incidents, filters])
 
-  const activeCount = mockIncidents.filter(
-    (i) => i.status !== "resolved" && i.status !== "failed_remediation"
+  const activeCount = incidents.filter(
+    (i) => !["RESOLVED", "CLOSED", "FAILED_REMEDIATION"].includes(i.status ?? "")
   ).length
 
   return (
     <div className="flex flex-col min-h-full">
       <Header title="Incidents" />
       <div className="flex-1 p-6">
-        {/* Page header */}
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-3">
               <h2 className="text-lg font-semibold text-zinc-50">Incidents</h2>
-              <span className="flex items-center gap-1.5 text-xs font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/20 rounded-full px-2.5 py-1">
-                <AlertTriangle className="h-3 w-3" />
-                {activeCount} active
-              </span>
+              {!loading && (
+                <span className="flex items-center gap-1.5 text-xs font-semibold bg-orange-500/15 text-orange-400 border border-orange-500/20 rounded-full px-2.5 py-1">
+                  <AlertTriangle className="h-3 w-3" />
+                  {activeCount} active
+                </span>
+              )}
             </div>
             <p className="text-sm text-zinc-500 mt-1">
               Monitor and respond to active incidents across your infrastructure
@@ -69,7 +82,6 @@ export default function IncidentsPage() {
           </div>
         </div>
 
-        {/* Filter bar */}
         <div className="mb-4">
           <FilterBar
             filters={filters}
@@ -79,9 +91,20 @@ export default function IncidentsPage() {
           />
         </div>
 
-        {/* Table */}
         <div className="bg-zinc-900 border border-zinc-800 rounded-xl overflow-hidden">
-          <IncidentsTable incidents={filteredIncidents} />
+          {loading ? (
+            <div className="flex flex-col items-center justify-center py-16 gap-3">
+              <div className="h-5 w-5 rounded-full border-2 border-zinc-600 border-t-blue-400 animate-spin" />
+              <p className="text-xs text-zinc-500">Loading incidents…</p>
+            </div>
+          ) : error ? (
+            <div className="flex flex-col items-center justify-center py-16 text-center px-6">
+              <p className="text-sm font-medium text-red-400">Failed to load incidents</p>
+              <p className="text-xs text-zinc-500 mt-1 font-mono">{error}</p>
+            </div>
+          ) : (
+            <IncidentsTable incidents={filteredIncidents} />
+          )}
         </div>
       </div>
     </div>

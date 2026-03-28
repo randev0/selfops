@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import { useParams } from "next/navigation"
 import Link from "next/link"
 import { ExternalLink, ChevronRight } from "lucide-react"
@@ -13,11 +13,52 @@ import { IncidentTimeline } from "@/components/incident-detail/incident-timeline
 import { AuditSummaryCard } from "@/components/incident-detail/audit-summary"
 import { AgentTrace } from "@/components/incident-detail/agent-trace"
 import { Header } from "@/components/layout/header"
-import { mockIncidents } from "@/lib/mock-data"
+import { getIncident, type IncidentDetail } from "@/lib/api"
+import { type Incident, type TimelineEvent } from "@/lib/mock-data"
 import { formatRelativeTime, formatAbsoluteTime, formatIncidentDuration } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 
 type Tab = "evidence" | "timeline" | "related" | "agent-trace"
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
+
+/** Map a real API IncidentDetail into the mock Incident shape required by existing components. */
+function apiToMock(real: IncidentDetail): Incident {
+  const analysis = real.analysis_results?.[0] ?? null
+
+  const timeline: TimelineEvent[] = (real.audit_logs ?? []).map((al) => ({
+    id: al.id,
+    timestamp: al.created_at,
+    type: al.event_type.startsWith("action")
+      ? ("action" as const)
+      : al.event_type.startsWith("analysis") || al.event_type.startsWith("gitops")
+      ? ("analysis" as const)
+      : al.event_type.startsWith("alert")
+      ? ("alert" as const)
+      : ("enrichment" as const),
+    actor: al.actor_id,
+    message: al.message,
+  }))
+
+  return {
+    id: real.id,
+    title: real.title,
+    severity: (real.severity?.toLowerCase() ?? "unknown") as Incident["severity"],
+    status: (real.status?.toLowerCase() ?? "open") as Incident["status"],
+    service: real.service_name ?? "unknown",
+    namespace: real.namespace ?? "platform",
+    environment: (real.environment ?? "production") as Incident["environment"],
+    createdAt: real.created_at,
+    lastSeen: real.last_seen_at,
+    summary: analysis?.summary ?? "",
+    probableCause: analysis?.probable_cause ?? "",
+    confidence: analysis?.confidence_score ?? 0,
+    recommendedAction: analysis?.recommendation ?? null,
+    evidencePoints: [],
+    timeline,
+    aiRecommendedActionId: analysis?.recommended_action_id ?? null,
+  }
+}
 
 const relatedAlerts = [
   {
@@ -35,11 +76,36 @@ const relatedAlerts = [
 export default function IncidentDetailPage() {
   const params = useParams()
   const id = params.id as string
+
+  const [incident, setIncident] = useState<Incident | null>(null)
+  const [loading, setLoading] = useState(true)
+  const [notFound, setNotFound] = useState(false)
   const [activeTab, setActiveTab] = useState<Tab>("evidence")
 
-  const incident = mockIncidents.find((i) => i.id === id)
+  useEffect(() => {
+    if (!UUID_RE.test(id)) {
+      setNotFound(true)
+      setLoading(false)
+      return
+    }
+    getIncident(id)
+      .then((detail) => setIncident(apiToMock(detail)))
+      .catch(() => setNotFound(true))
+      .finally(() => setLoading(false))
+  }, [id])
 
-  if (!incident) {
+  if (loading) {
+    return (
+      <div className="flex flex-col min-h-full">
+        <Header title="Incidents" subtitle="Loading…" />
+        <div className="flex-1 flex items-center justify-center">
+          <div className="h-6 w-6 rounded-full border-2 border-zinc-600 border-t-blue-400 animate-spin" />
+        </div>
+      </div>
+    )
+  }
+
+  if (notFound || !incident) {
     return (
       <div className="flex flex-col min-h-full">
         <Header title="Incidents" subtitle="Not Found" />
@@ -136,14 +202,16 @@ export default function IncidentDetailPage() {
             </div>
 
             {/* AI Summary card */}
-            <div className="bg-zinc-900/50 border border-blue-500/10 rounded-xl p-5 bg-[radial-gradient(ellipse_at_top_left,_rgba(59,130,246,0.05)_0%,_transparent_60%)]">
-              <div className="flex items-center gap-2 mb-2">
-                <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
-                  AI Summary
-                </span>
+            {incident.summary && (
+              <div className="bg-zinc-900/50 border border-blue-500/10 rounded-xl p-5 bg-[radial-gradient(ellipse_at_top_left,_rgba(59,130,246,0.05)_0%,_transparent_60%)]">
+                <div className="flex items-center gap-2 mb-2">
+                  <span className="text-xs font-semibold text-blue-400 uppercase tracking-wider">
+                    AI Summary
+                  </span>
+                </div>
+                <p className="text-sm text-zinc-300 leading-relaxed">{incident.summary}</p>
               </div>
-              <p className="text-sm text-zinc-300 leading-relaxed">{incident.summary}</p>
-            </div>
+            )}
 
             {/* Tabs */}
             <div>

@@ -2,10 +2,10 @@
 
 import Link from "next/link"
 import { ChevronRight, Zap } from "lucide-react"
-import { type Incident } from "@/lib/mock-data"
 import { SeverityBadge } from "@/components/ui/severity-badge"
 import { StatusBadge } from "@/components/ui/status-badge"
 import { formatRelativeTime } from "@/lib/utils"
+import { type Incident } from "@/lib/api"
 
 interface IncidentsTableProps {
   incidents: Incident[]
@@ -50,9 +50,6 @@ export function IncidentsTable({ incidents }: IncidentsTableProps) {
             <th className="text-left px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider hidden xl:table-cell">
               Last Seen
             </th>
-            <th className="text-center px-4 py-3 text-xs font-medium text-zinc-500 uppercase tracking-wider hidden md:table-cell w-12">
-              AI
-            </th>
             <th className="w-8 px-2" />
           </tr>
         </thead>
@@ -64,12 +61,10 @@ export function IncidentsTable({ incidents }: IncidentsTableProps) {
                 i % 2 === 0 ? "bg-zinc-900/30" : "bg-transparent"
               }`}
             >
-              {/* Severity */}
               <td className="px-4 py-3">
-                <SeverityBadge severity={incident.severity} />
+                <SeverityBadge severity={incident.severity ?? "unknown"} />
               </td>
 
-              {/* Title */}
               <td className="px-4 py-3 max-w-xs">
                 <Link
                   href={`/incidents/${incident.id}`}
@@ -79,43 +74,32 @@ export function IncidentsTable({ incidents }: IncidentsTableProps) {
                 </Link>
               </td>
 
-              {/* Service */}
               <td className="px-4 py-3 hidden md:table-cell">
-                <span className="font-mono text-xs text-zinc-400">{incident.service}</span>
+                <span className="font-mono text-xs text-zinc-400">
+                  {incident.service_name ?? "—"}
+                </span>
               </td>
 
-              {/* Namespace */}
               <td className="px-4 py-3 hidden lg:table-cell">
-                <span className="text-xs text-zinc-500">{incident.namespace}</span>
+                <span className="text-xs text-zinc-500">{incident.namespace ?? "—"}</span>
               </td>
 
-              {/* Status */}
               <td className="px-4 py-3">
-                <StatusBadge status={incident.status} />
+                <StatusBadge status={incident.status ?? "open"} />
               </td>
 
-              {/* Created */}
               <td className="px-4 py-3 hidden xl:table-cell">
-                <span className="text-xs text-zinc-500">{formatRelativeTime(incident.createdAt)}</span>
+                <span className="text-xs text-zinc-500">
+                  {formatRelativeTime(incident.created_at)}
+                </span>
               </td>
 
-              {/* Last seen */}
               <td className="px-4 py-3 hidden xl:table-cell">
-                <span className="text-xs text-zinc-500">{formatRelativeTime(incident.lastSeen)}</span>
+                <span className="text-xs text-zinc-500">
+                  {formatRelativeTime(incident.last_seen_at)}
+                </span>
               </td>
 
-              {/* AI recommendation */}
-              <td className="px-4 py-3 hidden md:table-cell text-center">
-                {incident.aiRecommendedActionId ? (
-                  <span title={`AI recommends: ${incident.aiRecommendedActionId}`}>
-                    <Zap className="h-3.5 w-3.5 text-blue-400 inline-block" />
-                  </span>
-                ) : (
-                  <span className="text-zinc-700">—</span>
-                )}
-              </td>
-
-              {/* Action */}
               <td className="px-2 py-3">
                 <Link
                   href={`/incidents/${incident.id}`}

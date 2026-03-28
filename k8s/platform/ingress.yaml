@@ -7,11 +7,12 @@ metadata:
   namespace: platform
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   tls:
     - hosts:
         - selfops.steadigital.com
-      secretName: cloudflare-origin-tls
+      secretName: selfops-frontend-tls
   rules:
     - host: "selfops.steadigital.com"
       http:
@@ -32,11 +33,12 @@ metadata:
   namespace: platform
   annotations:
     traefik.ingress.kubernetes.io/router.entrypoints: web,websecure
+    cert-manager.io/cluster-issuer: letsencrypt-prod
 spec:
   tls:
     - hosts:
         - api-selfops.steadigital.com
-      secretName: cloudflare-origin-tls
+      secretName: selfops-api-tls
   rules:
     - host: "api-selfops.steadigital.com"
       http:

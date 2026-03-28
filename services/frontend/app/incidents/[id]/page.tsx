@@ -13,7 +13,7 @@ import { IncidentTimeline } from "@/components/incident-detail/incident-timeline
 import { AuditSummaryCard } from "@/components/incident-detail/audit-summary"
 import { AgentTrace } from "@/components/incident-detail/agent-trace"
 import { Header } from "@/components/layout/header"
-import { getIncident, type IncidentDetail } from "@/lib/api"
+import { getIncident, getTimeline, type IncidentDetail, type ApiTimelineEvent } from "@/lib/api"
 import { type Incident, type TimelineEvent } from "@/lib/mock-data"
 import { formatRelativeTime, formatAbsoluteTime, formatIncidentDuration } from "@/lib/utils"
 import { cn } from "@/lib/utils"
@@ -22,23 +22,42 @@ type Tab = "evidence" | "timeline" | "related" | "agent-trace"
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i
 
-/** Map a real API IncidentDetail into the mock Incident shape required by existing components. */
-function apiToMock(real: IncidentDetail): Incident {
-  const analysis = real.analysis_results?.[0] ?? null
+/** Map an API TimelineEvent to the mock TimelineEvent shape the existing component uses. */
+function apiTimelineToMock(ev: ApiTimelineEvent): TimelineEvent {
+  let type: TimelineEvent["type"]
+  if (ev.source === "alert") {
+    type = ev.event_type === "alert.resolved" ? "resolution" : "alert"
+  } else if (ev.source === "evidence") {
+    type = "enrichment"
+  } else if (ev.source === "analysis") {
+    type = "analysis"
+  } else if (ev.source === "action") {
+    type = ev.event_type === "action.completed" ? "resolution" : "action"
+  } else {
+    // audit — derive from event_type
+    type = ev.event_type.includes("resolv") || ev.event_type.includes("closed")
+      ? "resolution"
+      : ev.event_type.startsWith("alert")
+      ? "alert"
+      : ev.event_type.startsWith("action")
+      ? "action"
+      : ev.event_type.startsWith("analysis") || ev.event_type.startsWith("gitops")
+      ? "analysis"
+      : "enrichment"
+  }
+  return {
+    id: ev.id,
+    timestamp: ev.timestamp,
+    type,
+    actor: (ev.metadata?.actor_id as string) ?? ev.source,
+    message: ev.title,
+  }
+}
 
-  const timeline: TimelineEvent[] = (real.audit_logs ?? []).map((al) => ({
-    id: al.id,
-    timestamp: al.created_at,
-    type: al.event_type.startsWith("action")
-      ? ("action" as const)
-      : al.event_type.startsWith("analysis") || al.event_type.startsWith("gitops")
-      ? ("analysis" as const)
-      : al.event_type.startsWith("alert")
-      ? ("alert" as const)
-      : ("enrichment" as const),
-    actor: al.actor_id,
-    message: al.message,
-  }))
+/** Map a real API IncidentDetail into the mock Incident shape required by existing components. */
+function apiToMock(real: IncidentDetail, apiTimeline: ApiTimelineEvent[]): Incident {
+  const analysis = real.analysis_results?.[0] ?? null
+  const timeline: TimelineEvent[] = apiTimeline.map(apiTimelineToMock)
 
   return {
     id: real.id,
@@ -88,8 +107,8 @@ export default function IncidentDetailPage() {
       setLoading(false)
       return
     }
-    getIncident(id)
-      .then((detail) => setIncident(apiToMock(detail)))
+    Promise.all([getIncident(id), getTimeline(id).catch(() => [])])
+      .then(([detail, timeline]) => setIncident(apiToMock(detail, timeline)))
       .catch(() => setNotFound(true))
       .finally(() => setLoading(false))
   }, [id])

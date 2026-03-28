@@ -112,6 +112,19 @@ export interface AuditLog {
   created_at: string;
 }
 
+/** Normalised timeline event returned by GET /api/incidents/:id/timeline */
+export interface ApiTimelineEvent {
+  id: string;
+  incident_id: string;
+  timestamp: string;
+  event_type: string;
+  source: "alert" | "evidence" | "analysis" | "action" | "audit";
+  title: string;
+  description: string;
+  severity: string | null;
+  metadata: Record<string, unknown>;
+}
+
 export interface IncidentDetail extends Incident {
   alert_events: Record<string, unknown>[];
   evidence: Evidence[];
@@ -148,6 +161,14 @@ export async function runAction(
     }
   );
   if (!res.ok) throw new Error(`Failed to run action: ${res.status}`);
+  return res.json();
+}
+
+export async function getTimeline(incidentId: string): Promise<ApiTimelineEvent[]> {
+  const res = await fetch(`${API_URL}/api/incidents/${incidentId}/timeline`, {
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(`Failed to fetch timeline: ${res.status}`);
   return res.json();
 }
 

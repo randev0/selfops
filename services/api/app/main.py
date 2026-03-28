@@ -1,6 +1,6 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from app.routers import alerts, incidents, actions, audit, health
+from app.routers import alerts, incidents, actions, audit, health, timeline
 import structlog
 
 log = structlog.get_logger()
@@ -27,6 +27,7 @@ app.include_router(alerts.router, prefix="/api/alerts", tags=["alerts"])
 app.include_router(incidents.router, prefix="/api/incidents", tags=["incidents"])
 app.include_router(actions.router, prefix="/api/incidents", tags=["actions"])
 app.include_router(audit.router, prefix="/api/incidents", tags=["audit"])
+app.include_router(timeline.router, prefix="/api/incidents", tags=["timeline"])
 
 
 @app.on_event("startup")

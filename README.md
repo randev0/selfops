@@ -22,36 +22,7 @@ SelfOps automates the investigation, enforces runbook compliance via policy retr
 
 ## How It Works
 
-```
-Prometheus alert fires
-       │
-       ▼
-FastAPI /webhook  →  PostgreSQL incident row
-       │
-       ▼
-ARQ Worker: enrich_incident
-   ├── Prometheus metrics  ──────────────────────────────┐
-   └── Loki logs  ───── via MCP Server ─────────────────►│
-                                                          │
-ARQ Worker: analyze_incident                              │
-   └── Analysis Service (ReAct Agent)  ◄──── evidence ───┘
-         ├── Fetches tools via MCP (Prometheus, Loki)
-         ├── Calls k8s API directly (ServiceAccount)
-         ├── Retrieves relevant SOPs (BM25 RAG)
-         └── Produces: summary, probable_cause, recommended_action
-                        + full investigation_log + SOP citations
-                                   │
-                ┌──────────────────┴──────────────────┐
-                ▼                                     ▼
-         DIRECT_ACTION                           GITOPS_PR
-    Ansible playbook                    GitHub branch + AI-patched YAML
-    (kubectl rollout restart)           + Pull Request opened
-    → verify_remediation (5 min)        → operator merges
-    → RESOLVED / ACTION_REQUIRED        → kubectl apply + verify (5 min)
-                │
-                ▼
-         Telegram notification  +  Audit log entry
-```
+![How It Works](docs/How-It-Works.png)
 
 ---
 

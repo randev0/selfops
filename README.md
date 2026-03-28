@@ -110,7 +110,7 @@ ARQ Worker: analyze_incident                              │
 | Remediation | Ansible + kubectl | Idempotent, auditable, human-readable |
 | Frontend | Next.js 15 + Tailwind CSS v4 | SSR-capable, component-driven |
 | Notifications | Telegram Bot API | Instant mobile alerts |
-| Infrastructure | Hetzner VPS (CPX32) | 4 vCPU / 8 GB for ~€15/mo |
+| Infrastructure | VPS | 4 vCPU / 8 GB 
 
 ---
 
@@ -262,7 +262,7 @@ export KUBECONFIG=~/.kube/config
 
 ## Deploying from Scratch
 
-1. Provision a Hetzner CPX32 (4 vCPU, 8 GB RAM, Ubuntu 24.04) — ~€15/mo
+1. Provision a VPS (4 vCPU, 8 GB RAM, Ubuntu 24.04)
 2. Install k3s: `curl -sfL https://get.k3s.io | sh -`
 3. Fill in `.env`; run `kubectl create secret generic selfops-secrets ...` (see `CLAUDE.md`)
 4. Build and import Docker images: `docker build ... | k3s ctr images import -`
@@ -298,19 +298,4 @@ selfops/
 
 ---
 
-## Screenshots Needed
 
-A summary of the visuals required to complete this README:
-
-| # | File | What to capture |
-|---|---|---|
-| 1 | `docs/screenshots/dashboard.png` | ![Dashboard](docs/screenshots/dashboard.png) |
-| 2 | `docs/screenshots/agent-trace.png` | ![Agent Trace tab](docs/screenshots/agent-trace.png) |
-| 3 | `docs/screenshots/gitops-pr.png` | ![GitOps PR](docs/screenshots/gitops-pr.png) |
-| 4 | `docs/screenshots/telegram.png` | ![Telegram Notification](docs/screenshots/telegram.png) |
-| 5 | `docs/architecture.png` | Architecture diagram (see ASCII art above as source — redraw in Excalidraw or similar) |
-| 6 | `docs/screenshots/demo-crash.gif` | _(Optional but high impact)_ Screen recording of Scenario 1 end-to-end — crash trigger to `RESOLVED` |
-
----
-
-_Built with Claude Code · Runs on k3s · ~€15/mo on Hetzner_

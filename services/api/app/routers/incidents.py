@@ -100,6 +100,11 @@ def _action_to_dict(ra: RemediationAction) -> dict:
         "started_at": ra.started_at.isoformat() if ra.started_at else None,
         "completed_at": ra.completed_at.isoformat() if ra.completed_at else None,
         "result_summary": ra.result_summary,
+        "remediation_strategy": ra.remediation_strategy,
+        "pr_url": ra.pr_url,
+        "pr_number": ra.pr_number,
+        "pr_branch": ra.pr_branch,
+        "patch_file_path": ra.patch_file_path,
         "created_at": ra.created_at.isoformat() if ra.created_at else None,
     }
 

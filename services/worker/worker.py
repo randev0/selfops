@@ -119,6 +119,7 @@ class ActionStatus(str, enum.Enum):
     RUNNING = "RUNNING"
     SUCCESS = "SUCCESS"
     FAILED = "FAILED"
+    PENDING_MERGE = "PENDING_MERGE"
 
 
 class ExecutionMode(str, enum.Enum):
@@ -247,6 +248,13 @@ class RemediationAction(Base):
     )
     result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     raw_output: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # GitOps fields
+    remediation_strategy: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pr_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pr_number: Mapped[Optional[int]] = mapped_column(nullable=True)
+    pr_branch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    patch_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    patch_file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -786,12 +794,397 @@ async def run_remediation(ctx: dict, action_db_id: str) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Job: run_gitops_remediation
+# ---------------------------------------------------------------------------
+
+
+async def run_gitops_remediation(ctx: dict, action_db_id: str) -> None:
+    """Create a GitHub branch, commit an AI-generated patch, open a PR."""
+    log.info("run_gitops_remediation started", action_db_id=action_db_id)
+    from jobs.github_client import create_branch, get_file, commit_file, create_pull_request
+    from jobs.patch_generator import generate_patch, resolve_manifest_path
+
+    session_factory = _get_session_factory()
+    now = datetime.now(timezone.utc)
+
+    async with session_factory() as db:
+        result = await db.execute(
+            select(RemediationAction).where(
+                RemediationAction.id == uuid.UUID(action_db_id)
+            )
+        )
+        action = result.scalar_one_or_none()
+        if not action:
+            log.error("RemediationAction not found", action_db_id=action_db_id)
+            return
+
+        incident_id = str(action.incident_id)
+
+        result = await db.execute(
+            select(Incident).where(Incident.id == action.incident_id)
+        )
+        incident = result.scalar_one_or_none()
+        if not incident:
+            log.error("Incident not found", incident_id=incident_id)
+            return
+
+        # Load latest analysis for context
+        ar_result = await db.execute(
+            select(AnalysisResult)
+            .where(AnalysisResult.incident_id == action.incident_id)
+            .order_by(AnalysisResult.created_at.desc())
+            .limit(1)
+        )
+        analysis = ar_result.scalar_one_or_none()
+
+        # Load first alert event for alert name
+        ae_result = await db.execute(
+            select(AlertEvent)
+            .where(AlertEvent.incident_id == action.incident_id)
+            .order_by(AlertEvent.created_at.asc())
+            .limit(1)
+        )
+        first_alert = ae_result.scalar_one_or_none()
+
+    alert_name = first_alert.alert_name if first_alert else "UnknownAlert"
+    summary = analysis.summary if analysis else ""
+    probable_cause = analysis.probable_cause if analysis else ""
+    service_name = incident.service_name or "unknown-service"
+
+    manifest_path = resolve_manifest_path(service_name)
+    branch_name = f"fix/incident-{incident_id[:8]}-{int(now.timestamp())}"
+
+    try:
+        # 1. Get current manifest from GitHub
+        file_data = await get_file(manifest_path)
+        current_content = file_data["content"]
+        file_sha = file_data["sha"]
+
+        # 2. Generate patch via LLM
+        patch = await generate_patch(
+            incident_title=incident.title,
+            service_name=service_name,
+            alert_name=alert_name,
+            analysis_summary=summary,
+            probable_cause=probable_cause,
+            current_manifest=current_content,
+        )
+
+        # 3. Create branch and commit patch
+        await create_branch(branch_name)
+        await commit_file(
+            branch=branch_name,
+            path=manifest_path,
+            new_content=patch["new_content"],
+            message=patch["commit_message"],
+            file_sha=file_sha,
+        )
+
+        # 4. Open PR
+        pr = await create_pull_request(
+            branch=branch_name,
+            title=patch["pr_title"],
+            body=patch["pr_body"],
+        )
+
+        log.info(
+            "GitOps PR created",
+            pr_number=pr["number"],
+            pr_url=pr["html_url"],
+            branch=branch_name,
+        )
+
+        # 5. Update action record
+        async with session_factory() as db:
+            result = await db.execute(
+                select(RemediationAction).where(
+                    RemediationAction.id == uuid.UUID(action_db_id)
+                )
+            )
+            action = result.scalar_one_or_none()
+            if action:
+                action.status = ActionStatus.PENDING_MERGE
+                action.pr_url = pr["html_url"]
+                action.pr_number = pr["number"]
+                action.pr_branch = branch_name
+                action.patch_content = patch["new_content"]
+                action.patch_file_path = manifest_path
+                action.result_summary = (
+                    f"PR #{pr['number']} opened: {pr['html_url']}"
+                )
+
+            audit_entry = AuditLog(
+                id=uuid.uuid4(),
+                incident_id=uuid.UUID(incident_id),
+                actor_type="automation",
+                actor_id="selfops-agent",
+                event_type="gitops.pr_created",
+                message=(
+                    f"GitOps PR #{pr['number']} created: {patch['description']} "
+                    f"— {pr['html_url']}"
+                ),
+                extra_metadata={
+                    "pr_number": pr["number"],
+                    "pr_url": pr["html_url"],
+                    "branch": branch_name,
+                    "file": manifest_path,
+                },
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(audit_entry)
+            await db.commit()
+
+        # 6. Telegram notification
+        from arq.connections import create_pool
+        redis_settings = RedisSettings.from_dsn(config.redis_url)
+        arq_redis = await create_pool(redis_settings)
+        await arq_redis.enqueue_job(
+            "notify_incident",
+            incident_id,
+            f"GitOps PR #{pr['number']} created — review and merge to apply fix: {pr['html_url']}",
+        )
+        await arq_redis.aclose()
+
+    except Exception as exc:
+        log.error("run_gitops_remediation failed", error=str(exc))
+        async with session_factory() as db:
+            result = await db.execute(
+                select(RemediationAction).where(
+                    RemediationAction.id == uuid.UUID(action_db_id)
+                )
+            )
+            action = result.scalar_one_or_none()
+            if action:
+                action.status = ActionStatus.FAILED
+                action.completed_at = datetime.now(timezone.utc)
+                action.result_summary = f"GitOps PR creation failed: {exc}"
+            audit_entry = AuditLog(
+                id=uuid.uuid4(),
+                incident_id=uuid.UUID(incident_id),
+                actor_type="automation",
+                actor_id="selfops-agent",
+                event_type="gitops.pr_failed",
+                message=f"GitOps PR creation failed: {exc}",
+                extra_metadata={"error": str(exc)},
+                created_at=datetime.now(timezone.utc),
+            )
+            db.add(audit_entry)
+            await db.commit()
+
+
+# ---------------------------------------------------------------------------
+# Job: verify_remediation
+# ---------------------------------------------------------------------------
+
+
+async def verify_remediation(
+    ctx: dict, incident_id: str, action_db_id: str
+) -> None:
+    """
+    After a GitOps PR is merged and the patch applied, monitor the service
+    for 5 minutes using Prometheus. Marks incident RESOLVED on success or
+    reverts to ACTION_REQUIRED on failure.
+    """
+    log.info("verify_remediation started", incident_id=incident_id)
+    session_factory = _get_session_factory()
+
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Incident).where(Incident.id == uuid.UUID(incident_id))
+        )
+        incident = result.scalar_one_or_none()
+        if not incident:
+            log.error("Incident not found for verification", incident_id=incident_id)
+            return
+
+        incident.status = IncidentStatus.MONITORING
+        incident.updated_at = datetime.now(timezone.utc)
+
+        audit = AuditLog(
+            id=uuid.uuid4(),
+            incident_id=uuid.UUID(incident_id),
+            actor_type="automation",
+            actor_id="selfops-agent",
+            event_type="verification.started",
+            message="Verification started — monitoring service health for 5 minutes",
+            extra_metadata={},
+            created_at=datetime.now(timezone.utc),
+        )
+        db.add(audit)
+        await db.commit()
+
+    namespace = incident.namespace or "platform"
+    service_name = incident.service_name or ""
+
+    # Allow k8s to begin the rollout
+    await asyncio.sleep(30)
+
+    checks_passed = 0
+    checks_total = 10  # 10 × 30s = 5 minutes
+    consecutive_clean = 0
+    required_consecutive = 3
+
+    async with httpx.AsyncClient(timeout=15.0) as client:
+        for check_num in range(1, checks_total + 1):
+            try:
+                # Check 1: restart rate in the last 2 minutes
+                restart_query = (
+                    f'rate(kube_pod_container_status_restarts_total'
+                    f'{{namespace="{namespace}"}}[2m])'
+                )
+                r1 = await client.get(
+                    f"{config.prometheus_url}/api/v1/query",
+                    params={"query": restart_query},
+                )
+                restarts = r1.json().get("data", {}).get("result", [])
+                any_restarting = any(
+                    float(item.get("value", [0, "0"])[1]) > 0
+                    for item in restarts
+                    if isinstance(item, dict)
+                )
+
+                # Check 2: ready replicas match desired
+                ready_query = (
+                    f'kube_deployment_status_ready_replicas'
+                    f'{{namespace="{namespace}"}}'
+                )
+                desired_query = (
+                    f'kube_deployment_spec_replicas'
+                    f'{{namespace="{namespace}"}}'
+                )
+                r2 = await client.get(
+                    f"{config.prometheus_url}/api/v1/query",
+                    params={"query": ready_query},
+                )
+                r3 = await client.get(
+                    f"{config.prometheus_url}/api/v1/query",
+                    params={"query": desired_query},
+                )
+
+                ready = {
+                    item["metric"].get("deployment"): float(item["value"][1])
+                    for item in r2.json().get("data", {}).get("result", [])
+                    if isinstance(item, dict) and item.get("metric")
+                }
+                desired = {
+                    item["metric"].get("deployment"): float(item["value"][1])
+                    for item in r3.json().get("data", {}).get("result", [])
+                    if isinstance(item, dict) and item.get("metric")
+                }
+                replicas_healthy = all(
+                    ready.get(dep, 0) >= desired.get(dep, 1)
+                    for dep in desired
+                )
+
+                is_healthy = (not any_restarting) and replicas_healthy
+
+            except Exception as exc:
+                log.warning("verification check failed", check=check_num, error=str(exc))
+                is_healthy = False
+
+            if is_healthy:
+                consecutive_clean += 1
+                checks_passed += 1
+                log.info(
+                    "verification check passed",
+                    check=check_num,
+                    consecutive=consecutive_clean,
+                )
+            else:
+                consecutive_clean = 0
+                log.info("verification check failed", check=check_num)
+
+            if consecutive_clean >= required_consecutive:
+                log.info(
+                    "verification succeeded early",
+                    checks=check_num,
+                    passed=checks_passed,
+                )
+                break
+
+            if check_num < checks_total:
+                await asyncio.sleep(30)
+
+    success = consecutive_clean >= required_consecutive
+    finished_at = datetime.now(timezone.utc)
+
+    async with session_factory() as db:
+        result = await db.execute(
+            select(Incident).where(Incident.id == uuid.UUID(incident_id))
+        )
+        incident = result.scalar_one_or_none()
+        if incident:
+            incident.status = (
+                IncidentStatus.RESOLVED if success else IncidentStatus.ACTION_REQUIRED
+            )
+            if success:
+                incident.resolved_at = finished_at
+            incident.updated_at = finished_at
+
+        result = await db.execute(
+            select(RemediationAction).where(
+                RemediationAction.id == uuid.UUID(action_db_id)
+            )
+        )
+        action = result.scalar_one_or_none()
+        if action:
+            action.status = ActionStatus.SUCCESS if success else ActionStatus.FAILED
+            action.completed_at = finished_at
+            action.result_summary = (
+                f"Service healthy after GitOps fix — incident resolved "
+                f"({checks_passed}/{checks_total} checks passed)"
+                if success
+                else f"Service still unhealthy after 5 minutes "
+                f"({checks_passed}/{checks_total} checks passed)"
+            )
+
+        verdict = "resolved" if success else "still unhealthy — escalating"
+        audit = AuditLog(
+            id=uuid.uuid4(),
+            incident_id=uuid.UUID(incident_id),
+            actor_type="automation",
+            actor_id="selfops-agent",
+            event_type="verification.completed" if success else "verification.failed",
+            message=f"Verification complete — service is {verdict}",
+            extra_metadata={
+                "checks_passed": checks_passed,
+                "checks_total": checks_total,
+                "success": success,
+            },
+            created_at=finished_at,
+        )
+        db.add(audit)
+        await db.commit()
+
+    log.info("verify_remediation complete", success=success, incident_id=incident_id)
+
+    # Telegram notification
+    from arq.connections import create_pool
+    redis_settings = RedisSettings.from_dsn(config.redis_url)
+    arq_redis = await create_pool(redis_settings)
+    msg = (
+        f"Incident RESOLVED after GitOps fix — service healthy for 5 minutes"
+        if success
+        else f"Verification FAILED — service still unhealthy after fix, manual review required"
+    )
+    await arq_redis.enqueue_job("notify_incident", incident_id, msg)
+    await arq_redis.aclose()
+
+
+# ---------------------------------------------------------------------------
 # ARQ WorkerSettings
 # ---------------------------------------------------------------------------
 
 
 class WorkerSettings:
     redis_settings = RedisSettings.from_dsn(config.redis_url)
-    functions = [enrich_incident, analyze_incident, notify_incident, run_remediation]
+    functions = [
+        enrich_incident,
+        analyze_incident,
+        notify_incident,
+        run_remediation,
+        run_gitops_remediation,
+        verify_remediation,
+    ]
     max_jobs = 10
-    job_timeout = 300
+    job_timeout = 600  # verification can take up to 5+ minutes

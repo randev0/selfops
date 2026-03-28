@@ -209,6 +209,13 @@ class RemediationAction(Base):
     )
     result_summary: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     raw_output: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
+    # GitOps fields
+    remediation_strategy: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pr_url: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    pr_number: Mapped[Optional[int]] = mapped_column(nullable=True)
+    pr_branch: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    patch_content: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    patch_file_path: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=func.now()
     )

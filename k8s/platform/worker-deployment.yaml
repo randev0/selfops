@@ -53,6 +53,14 @@ spec:
               value: "http://selfops-analysis.platform.svc.cluster.local:8001"
             - name: FRONTEND_URL
               value: "https://selfops.steadigital.com"
+            - name: GITHUB_TOKEN
+              valueFrom:
+                secretKeyRef:
+                  name: selfops-secrets
+                  key: github-token
+                  optional: true
+            - name: GITHUB_REPO
+              value: "randev0/selfops"
           resources:
             requests:
               memory: "128Mi"

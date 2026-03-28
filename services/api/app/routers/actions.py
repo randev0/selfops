@@ -68,9 +68,14 @@ async def _enqueue_job(job_name: str, *args) -> None:
         log.error("Failed to enqueue job", job=job_name, error=str(exc))
 
 
+GITOPS_PR = "GITOPS_PR"
+DIRECT_ACTION = "DIRECT_ACTION"
+
+
 class RunActionBody(BaseModel):
     parameters: dict[str, Any] = {}
     requested_by: Optional[str] = "operator"
+    strategy: Optional[str] = DIRECT_ACTION  # DIRECT_ACTION | GITOPS_PR
 
 
 @router.post("/{incident_id}/actions/{action_id}/run")
@@ -90,15 +95,19 @@ async def run_action(
     if not incident:
         raise HTTPException(status_code=404, detail="Incident not found")
 
-    # Validate action
-    valid, reason = _validate_action(action_id, body.parameters)
-    if not valid:
-        raise HTTPException(status_code=400, detail=reason)
+    strategy = body.strategy or DIRECT_ACTION
+    if strategy not in (DIRECT_ACTION, GITOPS_PR):
+        raise HTTPException(status_code=400, detail=f"Unknown strategy '{strategy}'")
 
-    action_def = ALLOWED_ACTIONS[action_id]
+    # DIRECT_ACTION requires valid action params; GITOPS_PR validates lazily
+    if strategy == DIRECT_ACTION:
+        valid, reason = _validate_action(action_id, body.parameters)
+        if not valid:
+            raise HTTPException(status_code=400, detail=reason)
+
+    action_def = ALLOWED_ACTIONS.get(action_id, {"name": action_id})
     now = datetime.now(timezone.utc)
 
-    # Create remediation_action row
     action = RemediationAction(
         id=uuid.uuid4(),
         incident_id=inc_uuid,
@@ -108,22 +117,23 @@ async def run_action(
         execution_mode=ExecutionMode.manual,
         status=ActionStatus.PENDING,
         parameters=body.parameters,
+        remediation_strategy=strategy,
         created_at=now,
     )
     db.add(action)
     await db.flush()
 
-    # Write audit log
     audit_entry = AuditLog(
         id=uuid.uuid4(),
         incident_id=inc_uuid,
         actor_type="user",
         actor_id=body.requested_by or "operator",
         event_type="action.requested",
-        message=f"Action requested by operator: {action_def['name']}",
-        metadata={
+        message=f"[{strategy}] Action requested: {action_def['name']}",
+        extra_metadata={
             "action_id": action_id,
             "action_db_id": str(action.id),
+            "strategy": strategy,
             "parameters": body.parameters,
         },
         created_at=now,
@@ -131,10 +141,87 @@ async def run_action(
     db.add(audit_entry)
     await db.commit()
 
-    # Enqueue the action execution job
-    await _enqueue_job("run_remediation", str(action.id))
+    job = "run_gitops_remediation" if strategy == GITOPS_PR else "run_remediation"
+    await _enqueue_job(job, str(action.id))
 
-    return {"action_id": str(action.id), "status": "PENDING"}
+    return {"action_id": str(action.id), "status": "PENDING", "strategy": strategy}
+
+
+@router.post("/{incident_id}/actions/{action_db_id}/merged")
+async def notify_pr_merged(
+    incident_id: str,
+    action_db_id: str,
+    db: AsyncSession = Depends(get_db),
+):
+    """
+    Called after a GitOps PR is merged (by operator or GitHub webhook).
+    Applies the patch to the cluster and enqueues the 5-minute verification job.
+    """
+    import subprocess
+
+    try:
+        inc_uuid = uuid.UUID(incident_id)
+        action_uuid = uuid.UUID(action_db_id)
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid UUID format")
+
+    result = await db.execute(
+        select(RemediationAction).where(RemediationAction.id == action_uuid)
+    )
+    action = result.scalar_one_or_none()
+    if not action:
+        raise HTTPException(status_code=404, detail="Action not found")
+
+    if action.remediation_strategy != GITOPS_PR:
+        raise HTTPException(
+            status_code=400, detail="This action is not a GITOPS_PR action"
+        )
+
+    if action.status != ActionStatus.PENDING_MERGE:
+        raise HTTPException(
+            status_code=409,
+            detail=f"Action is in status {action.status.value}, expected PENDING_MERGE",
+        )
+
+    now = datetime.now(timezone.utc)
+    action.status = ActionStatus.RUNNING
+    action.started_at = now
+
+    audit = AuditLog(
+        id=uuid.uuid4(),
+        incident_id=inc_uuid,
+        actor_type="user",
+        actor_id="operator",
+        event_type="gitops.pr_merged",
+        message=f"PR #{action.pr_number} merged — applying patch and starting verification",
+        extra_metadata={"pr_number": action.pr_number, "pr_url": action.pr_url},
+        created_at=now,
+    )
+    db.add(audit)
+    await db.commit()
+
+    # Apply the patch to the k8s cluster if we have the content
+    if action.patch_content:
+        try:
+            proc = subprocess.run(
+                ["kubectl", "apply", "-f", "-"],
+                input=action.patch_content,
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+            log.info(
+                "kubectl apply completed",
+                returncode=proc.returncode,
+                stdout=proc.stdout[:200],
+            )
+        except Exception as exc:
+            log.error("kubectl apply failed", error=str(exc))
+
+    # Enqueue 5-minute verification
+    await _enqueue_job("verify_remediation", incident_id, action_db_id)
+
+    return {"status": "verification_started", "action_id": action_db_id}
 
 
 @router.get("/{incident_id}/actions")
@@ -166,6 +253,11 @@ async def list_actions(
             "started_at": a.started_at.isoformat() if a.started_at else None,
             "completed_at": a.completed_at.isoformat() if a.completed_at else None,
             "result_summary": a.result_summary,
+            "remediation_strategy": a.remediation_strategy,
+            "pr_url": a.pr_url,
+            "pr_number": a.pr_number,
+            "pr_branch": a.pr_branch,
+            "patch_file_path": a.patch_file_path,
             "created_at": a.created_at.isoformat() if a.created_at else None,
         }
         for a in actions

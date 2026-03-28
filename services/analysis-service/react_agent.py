@@ -22,6 +22,7 @@ from langchain_openai import ChatOpenAI
 from agent_tools import fetch_loki_logs, fetch_prometheus_metrics, get_k8s_resource_yaml
 from schemas import AnalysisRequest, AnalysisResponse
 from sop_retriever import get_retriever
+import structured_output_parser
 
 log = structlog.get_logger()
 
@@ -51,7 +52,20 @@ _REACT_PROMPT = PromptTemplate.from_template(
     ' "evidence_points": ["specific finding 1", "specific finding 2", "specific finding 3"],'
     ' "recommended_action_id": "restart_deployment|rollout_restart|scale_up|null",'
     ' "confidence": 0.85,'
-    ' "escalate": false}}\n\n'
+    ' "escalate": false,'
+    ' "hypotheses": ['
+    '   {{"title": "Primary hypothesis", "description": "full explanation grounded in evidence", "confidence": 0.85, "supporting_evidence": ["specific finding 1"]}},'
+    '   {{"title": "Alternative hypothesis", "description": "less likely explanation", "confidence": 0.10, "supporting_evidence": []}}'
+    ' ],'
+    ' "evidence": ['
+    '   {{"source": "prometheus|loki|k8s|alert", "kind": "metric|log|resource|alert", "label": "short_name", "value": "observed value"}}'
+    ' ],'
+    ' "action_plan": ['
+    '   {{"action_id": "restart_deployment|rollout_restart|scale_up", "description": "why this action addresses the cause", "risk_level": "low|medium|high", "verification_steps": [{{"description": "what to check", "check": "metric_expression"}}]}}'
+    ' ]'
+    '}}\n\n'
+    "Provide at least 2 hypotheses. "
+    "If evidence is ambiguous (no single clear cause), provide 3 or more.\n\n"
     "INCIDENT:\n"
     "{input}\n\n"
     "Thought:{agent_scratchpad}"
@@ -215,6 +229,8 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
             investigation_log=capture.steps,
         )
 
+    structured = structured_output_parser.parse(parsed)
+
     return AnalysisResponse(
         summary=parsed.get("summary", "No summary produced"),
         probable_cause=parsed.get("probable_cause", "Unknown"),
@@ -224,4 +240,5 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
         escalate=bool(parsed.get("escalate", True)),
         raw_output=parsed,
         investigation_log=capture.steps,
+        structured=structured,
     )

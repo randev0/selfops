@@ -84,6 +84,7 @@ def _analysis_to_dict(ar: AnalysisResult) -> dict:
         "confidence_score": ar.confidence_score,
         "escalate": ar.escalate,
         "investigation_log": ar.investigation_log,
+        "structured_analysis": ar.structured_analysis,
         "created_at": ar.created_at.isoformat() if ar.created_at else None,
     }
 

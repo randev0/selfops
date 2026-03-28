@@ -218,6 +218,7 @@ class AnalysisResult(Base):
     escalate: Mapped[Optional[bool]] = mapped_column(Boolean)
     raw_output: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     investigation_log: Mapped[Optional[list]] = mapped_column(JSON, nullable=True)
+    structured_analysis: Mapped[Optional[dict]] = mapped_column(JSON, nullable=True)
     created_at: Mapped[Optional[datetime]] = mapped_column(
         DateTime(timezone=True), nullable=True
     )
@@ -535,20 +536,29 @@ async def analyze_incident(ctx: dict, incident_id: str) -> None:
                     "raw_output": {"error": str(exc)},
                 }
 
+        structured = analysis_response.get("structured")
+        # Derive recommendation text from structured action_plan when available
+        recommendation = analysis_response.get("recommendation", "")
+        if not recommendation and structured and isinstance(structured, dict):
+            plan = structured.get("action_plan", [])
+            if plan and isinstance(plan, list) and plan[0]:
+                recommendation = plan[0].get("description", "")
+
         analysis_row = AnalysisResult(
             id=uuid.uuid4(),
             incident_id=incident.id,
             model_provider="openrouter",
             model_name="anthropic/claude-3-haiku",
-            prompt_version="v2-react",
+            prompt_version="v3-structured" if structured else "v2-react",
             summary=analysis_response.get("summary", ""),
             probable_cause=analysis_response.get("probable_cause", ""),
-            recommendation=analysis_response.get("recommendation", ""),
+            recommendation=recommendation,
             recommended_action_id=analysis_response.get("recommended_action_id"),
             confidence_score=analysis_response.get("confidence", 0.0),
             escalate=analysis_response.get("escalate", False),
             raw_output=analysis_response.get("raw_output", analysis_response),
             investigation_log=analysis_response.get("investigation_log"),
+            structured_analysis=structured,
             created_at=now,
         )
         db.add(analysis_row)

@@ -30,6 +30,47 @@ export interface InvestigationStep {
   input?: string;
 }
 
+// Structured analysis domain types (v3-structured prompt output)
+export interface StructuredEvidenceItem {
+  source: "prometheus" | "loki" | "k8s" | "alert" | "other";
+  kind: "metric" | "log" | "resource" | "alert";
+  label: string;
+  value: string;
+}
+
+export interface StructuredHypothesis {
+  title: string;
+  description: string;
+  confidence: number;
+  supporting_evidence: string[];
+  rank: number;
+}
+
+export interface VerificationStep {
+  description: string;
+  check: string;
+}
+
+export interface StructuredActionPlanItem {
+  action_id: string;
+  name: string;
+  description: string;
+  risk_level: "low" | "medium" | "high";
+  requires_approval: boolean;
+  verification_steps: VerificationStep[];
+  parameters: Record<string, unknown>;
+}
+
+export interface StructuredAnalysis {
+  incident_summary: string;
+  evidence: StructuredEvidenceItem[];
+  hypotheses: StructuredHypothesis[];
+  action_plan: StructuredActionPlanItem[];
+  recommended_action_id: string | null;
+  overall_confidence: number;
+  escalate: boolean;
+}
+
 export interface Analysis {
   id: string;
   model_name: string;
@@ -40,6 +81,8 @@ export interface Analysis {
   confidence_score: number | null;
   escalate: boolean | null;
   investigation_log: InvestigationStep[] | null;
+  /** v3-structured output — null on pre-migration records */
+  structured_analysis: StructuredAnalysis | null;
   created_at: string;
 }
 

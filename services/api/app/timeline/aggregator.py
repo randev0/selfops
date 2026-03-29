@@ -7,6 +7,8 @@ sorted, deduplicated list of TimelineEvent objects.
 Sources (computed in-memory — no extra DB table required):
   1. AlertEvent         → alert.fired / alert.resolved
   2. IncidentEvidence   → evidence.collected
+                          (deploy_correlation rows → deploy.release / deploy.pr_merge /
+                           deploy.regression_suspected — emitted by _from_deploy_correlation)
   3. AnalysisResult     → analysis.completed
   4. RemediationAction  → action.requested / action.started / action.completed / action.failed
   5. AuditLog           → catch-all for events not covered by the sources above
@@ -137,6 +139,99 @@ def _from_evidence(incident_id: uuid.UUID, ev: IncidentEvidence) -> TimelineEven
             "evidence_type": ev.evidence_type,
         },
     )
+
+
+def _from_deploy_correlation(
+    incident_id: uuid.UUID, ev: IncidentEvidence
+) -> list[TimelineEvent]:
+    """
+    Convert a deploy_correlation IncidentEvidence row into timeline events.
+
+    Emits one TimelineEvent per DeployEvent in recent_deploys, plus an
+    optional regression-warning event when likely_regression is True.
+    The evidence DB id is embedded in every event id for uniqueness.
+    """
+    content = ev.content or {}
+    if not content.get("available", False):
+        return []
+
+    events: list[TimelineEvent] = []
+    repo = content.get("repo", "unknown")
+    ev_id_str = str(ev.id)
+
+    for deploy in (content.get("recent_deploys") or []):
+        if not isinstance(deploy, dict):
+            continue
+        kind = deploy.get("kind", "deploy")
+        deploy_id = deploy.get("id") or ""
+        ts_raw = deploy.get("timestamp") or ""
+        try:
+            ts = _ts(datetime.fromisoformat(ts_raw.replace("Z", "+00:00")))
+        except Exception:
+            continue
+
+        event_type = f"deploy.{kind}" if kind in ("release", "pr_merge", "direct_commit") else "deploy.change"
+        title = deploy.get("title") or "Deploy event"
+        author = deploy.get("author") or "unknown"
+
+        events.append(
+            TimelineEvent(
+                id=f"deploy-{ev_id_str}-{deploy_id}",
+                incident_id=str(incident_id),
+                timestamp=ts,
+                event_type=event_type,
+                source="deploy",
+                title=title,
+                description=f"[{kind}] {title} by {author} — repo: {repo}",
+                metadata={
+                    "source_id": ev_id_str,
+                    "deploy_id": deploy_id,
+                    "kind": kind,
+                    "ref": deploy.get("ref"),
+                    "author": author,
+                    "url": deploy.get("url"),
+                    "commit_sha": deploy.get("commit_sha"),
+                    "image_tag_hint": deploy.get("image_tag_hint"),
+                    "repo": repo,
+                },
+            )
+        )
+
+    # Emit a regression-warning marker at the incident timestamp
+    if content.get("likely_regression") and content.get("incident_timestamp"):
+        minutes = content.get("regression_window_minutes")
+        closest = content.get("closest_deploy") or {}
+        closest_title = closest.get("title", "recent deploy")
+        desc = (
+            f"Incident occurred {minutes} min after {closest_title!r} — "
+            "possible post-deploy regression"
+        )
+        try:
+            ts_raw = content["incident_timestamp"]
+            ts = _ts(datetime.fromisoformat(ts_raw.replace("Z", "+00:00")))
+        except Exception:
+            ts = _ts(ev.captured_at)
+
+        events.append(
+            TimelineEvent(
+                id=f"deploy-regression-{ev_id_str}",
+                incident_id=str(incident_id),
+                timestamp=ts,
+                event_type="deploy.regression_suspected",
+                source="deploy",
+                title="Possible post-deploy regression",
+                description=desc,
+                severity="warning",
+                metadata={
+                    "source_id": ev_id_str,
+                    "regression_window_minutes": minutes,
+                    "closest_deploy": closest.get("title"),
+                    "repo": repo,
+                },
+            )
+        )
+
+    return events
 
 
 def _from_analysis(incident_id: uuid.UUID, ar: AnalysisResult) -> TimelineEvent:
@@ -280,7 +375,10 @@ def build_timeline(
 
     for ev in evidence:
         try:
-            raw.append(_from_evidence(incident_id, ev))
+            if ev.evidence_type == "deploy_correlation":
+                raw.extend(_from_deploy_correlation(incident_id, ev))
+            else:
+                raw.append(_from_evidence(incident_id, ev))
         except Exception:
             pass
 

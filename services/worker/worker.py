@@ -387,6 +387,44 @@ async def enrich_incident(ctx: dict, incident_id: str) -> None:
             )
             db.add(evidence_log)
 
+        # --- GitHub deploy correlation (optional, non-fatal) ---
+        try:
+            from github_correlation import correlate_incident as _correlate
+            from github_correlation.config import GitHubCorrelationConfig
+
+            gh_config = GitHubCorrelationConfig()
+            inc_ts = incident.created_at or now
+            change_ctx = await _correlate(
+                incident_timestamp=inc_ts,
+                service=incident.service_name or "",
+                environment=incident.environment or "production",
+                config=gh_config,
+            )
+            if change_ctx.available:
+                evidence_deploy = IncidentEvidence(
+                    id=uuid.uuid4(),
+                    incident_id=incident.id,
+                    evidence_type="deploy_correlation",
+                    content=change_ctx.model_dump(mode="json"),
+                    captured_at=now,
+                )
+                db.add(evidence_deploy)
+                await db.commit()
+                log.info(
+                    "github_correlation stored",
+                    incident_id=incident_id,
+                    repo=change_ctx.repo,
+                    commits=change_ctx.total_commits,
+                    deploys=len(change_ctx.recent_deploys),
+                    likely_regression=change_ctx.likely_regression,
+                )
+        except Exception as _gh_exc:
+            log.warning(
+                "github_correlation failed (non-fatal)",
+                incident_id=incident_id,
+                error=str(_gh_exc),
+            )
+
         # Update status to ANALYZING
         incident.status = IncidentStatus.ANALYZING
         incident.updated_at = datetime.now(timezone.utc)

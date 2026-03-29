@@ -118,11 +118,64 @@ export interface ApiTimelineEvent {
   incident_id: string;
   timestamp: string;
   event_type: string;
-  source: "alert" | "evidence" | "analysis" | "action" | "audit";
+  source: "alert" | "evidence" | "analysis" | "action" | "audit" | "deploy";
   title: string;
   description: string;
   severity: string | null;
   metadata: Record<string, unknown>;
+}
+
+/** Typed models for GitHub deploy/change correlation (stored in evidence) */
+export interface DeployCommit {
+  sha: string;
+  short_sha: string;
+  author: string;
+  message: string;
+  timestamp: string;
+  url: string | null;
+}
+
+export interface DeployPR {
+  number: number;
+  title: string;
+  state: string;
+  author: string;
+  merged_at: string | null;
+  url: string;
+  changed_files: number;
+  labels: string[];
+}
+
+export interface DeployEvent {
+  id: string;
+  kind: "release" | "pr_merge" | "direct_commit";
+  ref: string;
+  timestamp: string;
+  title: string;
+  url: string | null;
+  author: string | null;
+  image_tag_hint: string | null;
+  config_version_hint: string | null;
+}
+
+export interface ChangeContext {
+  available: boolean;
+  error_message: string | null;
+  repo: string | null;
+  service: string | null;
+  environment: string | null;
+  incident_timestamp: string | null;
+  window_start: string | null;
+  window_end: string | null;
+  recent_commits: DeployCommit[];
+  recent_prs: DeployPR[];
+  recent_deploys: DeployEvent[];
+  likely_regression: boolean;
+  regression_window_minutes: number | null;
+  closest_deploy: DeployEvent | null;
+  changed_files_sample: { filename: string; status: string; additions: number; deletions: number }[];
+  total_commits: number;
+  total_prs_merged: number;
 }
 
 export interface IncidentDetail extends Incident {

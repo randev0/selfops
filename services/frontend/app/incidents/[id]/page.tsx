@@ -31,6 +31,8 @@ function apiTimelineToMock(ev: ApiTimelineEvent): TimelineEvent {
     type = "enrichment"
   } else if (ev.source === "analysis") {
     type = "analysis"
+  } else if (ev.source === "deploy") {
+    type = ev.event_type === "deploy.regression_suspected" ? "alert" : "action"
   } else if (ev.source === "action") {
     type = ev.event_type === "action.completed" ? "resolution" : "action"
   } else {

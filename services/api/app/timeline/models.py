@@ -11,7 +11,7 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, field_serializer
 
 
-TimelineSource = Literal["alert", "evidence", "analysis", "action", "audit"]
+TimelineSource = Literal["alert", "evidence", "analysis", "action", "audit", "deploy"]
 
 
 class TimelineEvent(BaseModel):

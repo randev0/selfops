@@ -425,6 +425,38 @@ async def enrich_incident(ctx: dict, incident_id: str) -> None:
                 error=str(_gh_exc),
             )
 
+        # --- PostgreSQL diagnostics (optional, non-fatal) ---
+        try:
+            from pg_diagnostics import fetch_diagnostics as _fetch_pg
+            from pg_diagnostics.config import PgDiagnosticsConfig
+
+            pg_config = PgDiagnosticsConfig()
+            if pg_config.pg_diagnostics_enabled:
+                db_diag = await _fetch_pg(config=pg_config)
+                evidence_db = IncidentEvidence(
+                    id=uuid.uuid4(),
+                    incident_id=incident.id,
+                    evidence_type="database",
+                    content=db_diag.model_dump(mode="json"),
+                    captured_at=now,
+                )
+                db.add(evidence_db)
+                await db.commit()
+                log.info(
+                    "pg_diagnostics stored",
+                    incident_id=incident_id,
+                    available=db_diag.available,
+                    total_connections=db_diag.total_connections,
+                    blocked=len(db_diag.blocked_queries),
+                    long_idle=len(db_diag.long_idle_connections),
+                )
+        except Exception as _pg_exc:
+            log.warning(
+                "pg_diagnostics failed (non-fatal)",
+                incident_id=incident_id,
+                error=str(_pg_exc),
+            )
+
         # Update status to ANALYZING
         incident.status = IncidentStatus.ANALYZING
         incident.updated_at = datetime.now(timezone.utc)

@@ -15,7 +15,7 @@ import { AgentTrace } from "@/components/incident-detail/agent-trace"
 import { Header } from "@/components/layout/header"
 import { getIncident, getTimeline, type IncidentDetail, type ApiTimelineEvent } from "@/lib/api"
 import { type Incident, type TimelineEvent } from "@/lib/mock-data"
-import { formatRelativeTime, formatAbsoluteTime, formatIncidentDuration } from "@/lib/utils"
+import { formatRelativeTime, formatAbsoluteTime, formatIncidentDuration, buildGrafanaUrl } from "@/lib/utils"
 import { cn } from "@/lib/utils"
 
 type Tab = "evidence" | "timeline" | "related" | "agent-trace"
@@ -213,7 +213,9 @@ export default function IncidentDetailPage() {
                   <span className="text-zinc-400">{formatIncidentDuration(incident.createdAt)}</span>
                 </span>
                 <a
-                  href="#"
+                  href={buildGrafanaUrl(incident.service, incident.namespace, incident.createdAt)}
+                  target="_blank"
+                  rel="noopener noreferrer"
                   className="flex items-center gap-1 text-blue-400 hover:text-blue-300 transition-colors ml-auto"
                 >
                   Open in Grafana

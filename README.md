@@ -37,6 +37,13 @@ SelfOps automates the investigation, enforces runbook compliance via policy retr
 - Three live tools: `fetch_prometheus_metrics`, `fetch_loki_logs`, `get_k8s_resource`
 - Every Thought / Action / Observation step stored in `investigation_log` for full traceability
 
+**Structured hypothesis classification**
+- Deterministic pre-classifier runs before the LLM, grounded in deploy correlation and PostgreSQL diagnostics
+- Every hypothesis tagged as `symptom` (observable effect), `trigger` (recent change), or `root_cause` (underlying technical reason)
+- Pre-classified hypotheses merge with LLM output; deterministic results win on collision
+- Confidence clamped to `[0.0, 1.0]` with three bands: strong (0.6–0.9), moderate (0.3–0.6), weak (<0.3)
+- See [`docs/analysis-reasoning.md`](docs/analysis-reasoning.md) for the full rule table
+
 **Two remediation strategies** _(Phase 2)_
 - `DIRECT_ACTION`: runs an Ansible playbook immediately; starts 5-minute Prometheus verification
 - `GITOPS_PR`: AI generates a minimal YAML patch → opens a GitHub PR → operator merges → kubectl apply → 5-minute verification
@@ -59,6 +66,12 @@ SelfOps automates the investigation, enforces runbook compliance via policy retr
 **Full audit trail**
 - Every alert, enrichment step, LLM call, action, and SOP retrieval is written to `audit_logs`
 - `investigation_log` JSONB column stores the full ReAct chain per analysis
+
+**Self-improving agent**
+- Inspired by the [clawhub.ai self-improving-agent](https://clawhub.ai) pattern
+- Persistent memory system captures recurring integration errors, validated fixes, and feature requests across Claude Code sessions
+- Three memory categories: `recurring_errors` (infra/integration pitfalls with root cause + fix), `feature_requests` (capability tracker), `feedback` (approach corrections and validated patterns)
+- Prevents re-diagnosing the same issues across sessions; new sessions load prior context automatically
 
 ---
 

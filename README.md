@@ -95,8 +95,6 @@ SelfOps automates the investigation, enforces runbook compliance via policy retr
 
 ### Scenario 1 — Pod Crash Loop _(~90 seconds end-to-end)_
 
-<!-- 📸 GIF NEEDED: Screen recording of the full crash scenario. Recommended: record with LICEcap or Kap. Show: triggering the crash → incident appearing in dashboard → clicking into it → seeing the AI analysis and Agent Trace → running restart action. Save as docs/screenshots/demo-crash.gif -->
-> **[Demo GIF: Crash Loop scenario]** — _add `docs/screenshots/demo-crash.gif` here_
 
 ```bash
 ./scripts/trigger-demo-crash.sh

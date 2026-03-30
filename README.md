@@ -37,6 +37,10 @@ SelfOps automates the investigation, enforces runbook compliance via policy retr
 - Three live tools: `fetch_prometheus_metrics`, `fetch_loki_logs`, `get_k8s_resource`
 - Every Thought / Action / Observation step stored in `investigation_log` for full traceability
 
+**Two remediation strategies** _(Phase 2)_
+- `DIRECT_ACTION`: runs an Ansible playbook immediately; starts 5-minute Prometheus verification
+- `GITOPS_PR`: AI generates a minimal YAML patch → opens a GitHub PR → operator merges → kubectl apply → 5-minute verification
+
 **MCP data layer** _(Phase 3)_
 - Standalone `@modelcontextprotocol/sdk` server decouples data fetching from agent runtime
 - Exposes MCP resources: `metrics://cpu-usage/{ns}/{pod}`, `k8s://pod-logs/{ns}/{pod}`
@@ -47,10 +51,6 @@ SelfOps automates the investigation, enforces runbook compliance via policy retr
 - BM25Okapi retrieval injects the 2 most relevant policies into every investigation
 - AI is required to cite the SOP in its recommendation, e.g.:
   > _"According to memory-oom-policy.md, OOM-killed containers must have their memory limit increased by 1.5× via a GITOPS_PR."_
-
-**Two remediation strategies** _(Phase 2)_
-- `DIRECT_ACTION`: runs an Ansible playbook immediately; starts 5-minute Prometheus verification
-- `GITOPS_PR`: AI generates a minimal YAML patch → opens a GitHub PR → operator merges → kubectl apply → 5-minute verification
 
 **Operator dashboard**
 - Next.js frontend: incident list, evidence, AI analysis, Agent Trace tab (collapsible thought process), GitOps PR cards with live status

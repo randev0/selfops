@@ -64,7 +64,7 @@ export default function IncidentsPage() {
   return (
     <div className="flex flex-col min-h-full">
       <Header title="Incidents" />
-      <div className="flex-1 p-6">
+      <div className="flex-1 p-4 md:p-6">
         <div className="flex items-start justify-between mb-6">
           <div>
             <div className="flex items-center gap-3">

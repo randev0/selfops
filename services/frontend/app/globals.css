@@ -57,6 +57,15 @@ body {
   margin: 0;
 }
 
+/* Hide scrollbar while keeping scroll functionality (used for tab rows etc.) */
+.scrollbar-none {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.scrollbar-none::-webkit-scrollbar {
+  display: none;
+}
+
 /* Custom scrollbar */
 ::-webkit-scrollbar {
   width: 6px;

@@ -66,66 +66,66 @@ export function FilterBar({ filters, onFiltersChange, resultCount, services }: F
     onFiltersChange({ ...filters, ...patch })
 
   return (
-    <div className="flex items-center gap-2 flex-wrap">
-      {/* Search */}
-      <div className="relative">
+    <div className="space-y-2">
+      {/* Row 1: search (full width on mobile, fixed on sm+) */}
+      <div className="relative w-full sm:w-56">
         <Search className="absolute left-2.5 top-1/2 -translate-y-1/2 h-3.5 w-3.5 text-zinc-600 pointer-events-none" />
         <input
           type="text"
           placeholder="Search incidents..."
           value={filters.search}
           onChange={(e) => update({ search: e.target.value })}
-          className="h-8 w-56 bg-zinc-900 border border-zinc-800 rounded-lg pl-8 pr-3 text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 transition-colors"
+          className="h-8 w-full bg-zinc-900 border border-zinc-800 rounded-lg pl-8 pr-3 text-xs text-zinc-300 placeholder-zinc-600 focus:outline-none focus:border-zinc-700 focus:ring-1 focus:ring-zinc-700 transition-colors"
         />
       </div>
 
-      {/* Status */}
-      <SelectFilter
-        value={filters.status}
-        onChange={(v) => update({ status: v })}
-        options={statuses}
-        placeholder="All Statuses"
-      />
+      {/* Row 2: filters + result count */}
+      <div className="flex items-center gap-2 flex-wrap">
+        <SelectFilter
+          value={filters.status}
+          onChange={(v) => update({ status: v })}
+          options={statuses}
+          placeholder="All Statuses"
+        />
 
-      {/* Severity */}
-      <SelectFilter
-        value={filters.severity}
-        onChange={(v) => update({ severity: v })}
-        options={severities}
-        placeholder="All Severities"
-      />
+        <SelectFilter
+          value={filters.severity}
+          onChange={(v) => update({ severity: v })}
+          options={severities}
+          placeholder="All Severities"
+        />
 
-      {/* Service */}
-      <SelectFilter
-        value={filters.service}
-        onChange={(v) => update({ service: v })}
-        options={services}
-        placeholder="All Services"
-      />
+        <SelectFilter
+          value={filters.service}
+          onChange={(v) => update({ service: v })}
+          options={services}
+          placeholder="All Services"
+        />
 
-      {/* Environment toggle */}
-      <div className="flex h-8 rounded-lg border border-zinc-800 overflow-hidden">
-        {(["", "production", "staging"] as const).map((e) => (
-          <button
-            key={e}
-            onClick={() => update({ environment: e })}
-            className={cn(
-              "px-3 text-xs font-medium transition-colors",
-              filters.environment === e
-                ? "bg-zinc-700 text-zinc-100"
-                : "bg-zinc-900 text-zinc-500 hover:bg-zinc-800/70"
-            )}
-          >
-            {e === "" ? "All" : e === "production" ? "Prod" : "Staging"}
-          </button>
-        ))}
+        {/* Environment toggle */}
+        <div className="flex h-8 rounded-lg border border-zinc-800 overflow-hidden">
+          {(["", "production", "staging"] as const).map((e) => (
+            <button
+              key={e}
+              onClick={() => update({ environment: e })}
+              className={cn(
+                "px-3 text-xs font-medium transition-colors",
+                filters.environment === e
+                  ? "bg-zinc-700 text-zinc-100"
+                  : "bg-zinc-900 text-zinc-500 hover:bg-zinc-800/70"
+              )}
+            >
+              {e === "" ? "All" : e === "production" ? "Prod" : "Staging"}
+            </button>
+          ))}
+        </div>
+
+        {/* Result count */}
+        <span className="ml-auto text-xs text-zinc-500">
+          <span className="font-semibold text-zinc-300">{resultCount}</span> incident
+          {resultCount !== 1 ? "s" : ""}
+        </span>
       </div>
-
-      {/* Result count */}
-      <span className="ml-auto text-xs text-zinc-500">
-        <span className="font-semibold text-zinc-300">{resultCount}</span> incident
-        {resultCount !== 1 ? "s" : ""}
-      </span>
     </div>
   )
 }

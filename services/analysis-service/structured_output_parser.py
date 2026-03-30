@@ -17,11 +17,13 @@ Accepts two input formats:
 Guarantees:
   - Always returns a valid StructuredAnalysis; never raises.
   - Hypotheses list is always non-empty.
+  - Every hypothesis has a valid category (symptom | trigger | root_cause).
   - Hypotheses are sorted by confidence descending (rank 1 = most likely).
   - When the top hypothesis confidence is < 0.65 (ambiguous evidence), at least
     3 hypotheses are returned, padded with generic low-confidence candidates.
   - Every ActionPlanItem has risk_level and verification_steps populated —
     defaults are injected per action_id if the LLM omits them.
+  - Pre-analyzed EvidenceItems (from deploy/DB data) are merged with LLM evidence.
 """
 
 from __future__ import annotations
@@ -34,6 +36,7 @@ from domain.models import (
     EvidenceSource,
     EvidenceKind,
     Hypothesis,
+    HypothesisCategory,
     RiskLevel,
     StructuredAnalysis,
     VerificationStep,
@@ -102,35 +105,93 @@ _GENERIC_VERIFICATION = [
 ]
 
 # Fallback hypotheses injected when evidence is ambiguous and fewer than 3
-# hypotheses were produced.
-_FALLBACK_HYPOTHESES: list[tuple[str, str, float]] = [
+# hypotheses were produced.  Tuple: (title, description, confidence, category)
+_FALLBACK_HYPOTHESES: list[tuple[str, str, float, HypothesisCategory]] = [
     (
         "Transient infrastructure failure",
         "Temporary resource exhaustion or network blip unrelated to recent code changes.",
         0.20,
+        "symptom",
     ),
     (
         "Configuration drift",
         "A recent configuration change introduced unexpected behavior.",
         0.15,
+        "trigger",
     ),
     (
         "Resource limits too restrictive",
         "Memory or CPU limits are set too low for the current workload.",
         0.10,
+        "root_cause",
     ),
     (
         "Cascading dependency failure",
         "An upstream service or database is causing the observed symptoms.",
         0.10,
+        "root_cause",
     ),
 ]
 
 _VALID_SOURCES: frozenset[EvidenceSource] = frozenset(
-    ("prometheus", "loki", "k8s", "alert", "other")
+    ("prometheus", "loki", "k8s", "alert", "deploy", "database", "other")
 )
 _VALID_KINDS: frozenset[EvidenceKind] = frozenset(("metric", "log", "resource", "alert"))
 _VALID_RISKS: frozenset[RiskLevel] = frozenset(("low", "medium", "high"))
+_VALID_CATEGORIES: frozenset[HypothesisCategory] = frozenset(
+    ("symptom", "trigger", "root_cause")
+)
+
+# ---------------------------------------------------------------------------
+# Category inference — keyword-based heuristic used when the LLM does not
+# provide a category or provides an invalid one.
+# ---------------------------------------------------------------------------
+
+# Keywords that strongly indicate each category (matched as substrings,
+# case-insensitive).
+_TRIGGER_KEYWORDS: frozenset[str] = frozenset({
+    "deploy", "release", "rollout", "migration", "push", "update",
+    "config change", "configuration change", "scaling event", "upgrade",
+    "new version", "recent change", "just deployed", "just released",
+})
+_SYMPTOM_KEYWORDS: frozenset[str] = frozenset({
+    "saturation", "exhaustion", "high cpu", "high memory", "oom",
+    "error rate", "elevated", "latency", "timeout", "pod restart",
+    "crash", "crash loop", "connection limit", "rate limiting",
+    "response time", "slow", "degraded", "service unavailable",
+    "high load", "throttling", "spike", "peak", "overload",
+})
+_ROOT_CAUSE_KEYWORDS: frozenset[str] = frozenset({
+    "leak", "connection pool", "misconfiguration", "bug", "race condition",
+    "deadlock", "logic error", "infinite loop", "inefficient query",
+    "missing index", "resource limit", "too restrictive", "hard coded",
+    "incorrect setting", "wrong configuration", "code defect",
+    "memory growth", "unclosed", "not released", "not returned",
+})
+
+
+def _infer_category(title: str, description: str) -> HypothesisCategory:
+    """
+    Infer a hypothesis category from its title and description when the LLM
+    did not provide one.
+
+    Returns "root_cause" as the safest default when no keywords match.
+    """
+    text = (title + " " + description).lower()
+
+    trigger_score = sum(1 for kw in _TRIGGER_KEYWORDS if kw in text)
+    symptom_score = sum(1 for kw in _SYMPTOM_KEYWORDS if kw in text)
+    root_cause_score = sum(1 for kw in _ROOT_CAUSE_KEYWORDS if kw in text)
+
+    if trigger_score == 0 and symptom_score == 0 and root_cause_score == 0:
+        return "root_cause"
+
+    scores: dict[HypothesisCategory, int] = {
+        "trigger": trigger_score,
+        "symptom": symptom_score,
+        "root_cause": root_cause_score,
+    }
+    return max(scores, key=scores.__getitem__)  # type: ignore[return-value]
 
 # --------------------------------------------------------------------------- #
 # Internal helpers
@@ -175,10 +236,22 @@ def _parse_hypotheses(raw_list: list) -> list[Hypothesis]:
         if not isinstance(item, dict):
             continue
         try:
+            title = str(item.get("title", "Unknown"))[:200]
+            description = str(item.get("description", ""))[:500]
+
+            # Validate or infer category
+            raw_cat = item.get("category")
+            if raw_cat in _VALID_CATEGORIES:
+                category: HypothesisCategory = raw_cat  # type: ignore[assignment]
+            else:
+                category = _infer_category(title, description)
+
             result.append(
                 Hypothesis(
-                    title=str(item.get("title", "Unknown"))[:200],
-                    description=str(item.get("description", ""))[:500],
+                    title=title,
+                    description=description,
+                    category=category,
+                    reasoning_summary=str(item.get("reasoning_summary", ""))[:500],
                     confidence=float(item.get("confidence", 0.5)),
                     supporting_evidence=[
                         str(e)[:200] for e in item.get("supporting_evidence", [])
@@ -249,6 +322,7 @@ def _pad_to_three(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
     """
     When evidence is ambiguous (top confidence < 0.65), ensure at least 3
     hypotheses by appending generic low-confidence candidates.
+    Fallback hypotheses include pre-assigned categories.
     """
     if not hypotheses:
         return hypotheses
@@ -257,7 +331,7 @@ def _pad_to_three(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
 
     existing_lower = {h.title.lower() for h in hypotheses}
     result = list(hypotheses)
-    for title, desc, conf in _FALLBACK_HYPOTHESES:
+    for title, desc, conf, cat in _FALLBACK_HYPOTHESES:
         if len(result) >= 3:
             break
         if title.lower() not in existing_lower:
@@ -265,6 +339,8 @@ def _pad_to_three(hypotheses: list[Hypothesis]) -> list[Hypothesis]:
                 Hypothesis(
                     title=title,
                     description=desc,
+                    category=cat,
+                    reasoning_summary="",
                     confidence=conf,
                     supporting_evidence=[],
                     rank=len(result) + 1,
@@ -295,15 +371,33 @@ def _action_from_id(action_id: str) -> ActionPlanItem:
 # --------------------------------------------------------------------------- #
 
 
-def parse(parsed_llm: dict) -> StructuredAnalysis:
+def parse(
+    parsed_llm: dict,
+    pre_evidence: list[EvidenceItem] | None = None,
+    pre_hypotheses: list[Hypothesis] | None = None,
+) -> StructuredAnalysis:
     """
     Parse a raw LLM JSON dict into a StructuredAnalysis.
 
     Accepts both v3 (hypotheses/evidence/action_plan keys present) and v2
     (flat fields only).  Always returns a valid object; never raises.
+
+    Parameters
+    ----------
+    parsed_llm:
+        Raw JSON dict from the LLM output.
+    pre_evidence:
+        EvidenceItem objects derived from deploy-correlation and database-
+        diagnostics data *before* the LLM ran.  These are merged into
+        StructuredAnalysis.evidence so the caller has a single combined list.
+    pre_hypotheses:
+        Hypothesis objects produced by the deterministic hypothesis_classifier
+        *before* the LLM ran.  These are merged with the LLM-produced
+        hypotheses and deduplicated by title before final ranking.
+        Pre-classified hypotheses take precedence on title collisions.
     """
     try:
-        return _parse_inner(parsed_llm)
+        return _parse_inner(parsed_llm, pre_evidence or [], pre_hypotheses or [])
     except Exception as exc:
         log.warning(
             "structured_output_parser.parse failed — using minimal fallback",
@@ -311,20 +405,53 @@ def parse(parsed_llm: dict) -> StructuredAnalysis:
         )
         return StructuredAnalysis(
             incident_summary=str(parsed_llm.get("summary", "Analysis unavailable"))[:500],
-            hypotheses=[
-                Hypothesis(
-                    title="Unknown",
-                    description="Parser error — manual investigation required.",
-                    confidence=0.0,
-                    rank=1,
-                )
-            ],
+            evidence=list(pre_evidence or []),
+            hypotheses=_rank(
+                list(pre_hypotheses or [])
+                or [
+                    Hypothesis(
+                        title="Unknown",
+                        description="Parser error — manual investigation required.",
+                        category="root_cause",
+                        confidence=0.0,
+                        rank=1,
+                    )
+                ]
+            ),
             overall_confidence=0.0,
             escalate=True,
         )
 
 
-def _parse_inner(flat: dict) -> StructuredAnalysis:
+def _merge_hypotheses(
+    pre: list[Hypothesis],
+    llm: list[Hypothesis],
+) -> list[Hypothesis]:
+    """
+    Merge deterministic (pre) and LLM-produced hypotheses.
+
+    Strategy:
+    - Pre-classified hypotheses take priority on title collisions (they are
+      grounded in concrete evidence and are more reliable).
+    - LLM hypotheses whose titles do not duplicate a pre-classified one are
+      appended.
+    - Deduplication is case-insensitive on the first 60 chars of the title.
+    """
+    seen: set[str] = {h.title.lower()[:60] for h in pre}
+    merged = list(pre)
+    for h in llm:
+        key = h.title.lower()[:60]
+        if key not in seen:
+            seen.add(key)
+            merged.append(h)
+    return merged
+
+
+def _parse_inner(
+    flat: dict,
+    pre_evidence: list[EvidenceItem] | None = None,
+    pre_hypotheses: list[Hypothesis] | None = None,
+) -> StructuredAnalysis:
     # ---- Evidence ----
     evidence = _parse_evidence(flat.get("evidence", []))
     if not evidence:
@@ -340,11 +467,11 @@ def _parse_inner(flat: dict) -> StructuredAnalysis:
         ]
 
     # ---- Hypotheses ----
-    hypotheses = _parse_hypotheses(flat.get("hypotheses", []))
-    if not hypotheses:
+    llm_hypotheses = _parse_hypotheses(flat.get("hypotheses", []))
+    if not llm_hypotheses:
         # v2 fallback: one hypothesis from probable_cause
         probable_cause = flat.get("probable_cause", "Unknown cause")
-        hypotheses = [
+        llm_hypotheses = [
             Hypothesis(
                 title=str(probable_cause)[:200],
                 description=str(probable_cause)[:500],
@@ -353,6 +480,10 @@ def _parse_inner(flat: dict) -> StructuredAnalysis:
                 rank=1,
             )
         ]
+
+    # Merge deterministic pre-classified hypotheses with LLM-produced ones.
+    # Pre-classified hypotheses win on title collision.
+    hypotheses = _merge_hypotheses(list(pre_hypotheses or []), llm_hypotheses)
 
     hypotheses = _pad_to_three(hypotheses)
     hypotheses = _rank(hypotheses)
@@ -365,7 +496,7 @@ def _parse_inner(flat: dict) -> StructuredAnalysis:
 
     return StructuredAnalysis(
         incident_summary=str(flat.get("summary", ""))[:1000],
-        evidence=evidence,
+        evidence=list(pre_evidence or []) + evidence,
         hypotheses=hypotheses,
         action_plan=action_plan,
         recommended_action_id=recommended_id,

@@ -15,6 +15,10 @@ class AnalysisRequest(BaseModel):
     metrics_summary: Optional[str] = None
     log_lines: Optional[str] = None
     allowed_actions: List[dict]
+    # Optional enriched evidence — absent on older worker builds; the analyzer
+    # gracefully degrades when these are None.
+    deploy_correlation: Optional[dict] = None    # serialised ChangeContext
+    database_diagnostics: Optional[dict] = None  # serialised DatabaseDiagnostics
 
 
 class AnalysisResponse(BaseModel):

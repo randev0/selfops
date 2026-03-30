@@ -12,6 +12,10 @@ app = FastAPI(
     docs_url="/api/docs",
     redoc_url="/api/redoc",
     openapi_url="/api/openapi.json",
+    # Prevent FastAPI from issuing 307 trailing-slash redirects.
+    # Behind a TLS-terminating proxy the redirect Location is HTTP, which
+    # causes browsers to block the cross-origin HTTP→HTTPS downgrade.
+    redirect_slashes=False,
 )
 
 app.add_middleware(

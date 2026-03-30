@@ -122,7 +122,7 @@ def _audit_to_dict(al: AuditLog) -> dict:
     }
 
 
-@router.get("/")
+@router.get("")
 async def list_incidents(
     limit: int = Query(default=50, ge=1, le=200),
     offset: int = Query(default=0, ge=0),

@@ -20,6 +20,8 @@ from langchain.schema import AgentAction, AgentFinish
 from langchain_openai import ChatOpenAI
 
 from agent_tools import fetch_loki_logs, fetch_prometheus_metrics, get_k8s_resource_yaml
+from evidence_summarizer import summarize_deploy_correlation, summarize_database_diagnostics
+from hypothesis_classifier import classify as classify_hypotheses
 from schemas import AnalysisRequest, AnalysisResponse
 from sop_retriever import get_retriever
 import structured_output_parser
@@ -54,8 +56,13 @@ _REACT_PROMPT = PromptTemplate.from_template(
     ' "confidence": 0.85,'
     ' "escalate": false,'
     ' "hypotheses": ['
-    '   {{"title": "Primary hypothesis", "description": "full explanation grounded in evidence", "confidence": 0.85, "supporting_evidence": ["specific finding 1"]}},'
-    '   {{"title": "Alternative hypothesis", "description": "less likely explanation", "confidence": 0.10, "supporting_evidence": []}}'
+    '   {{"title": "Primary hypothesis", "description": "full explanation grounded in evidence", '
+    '"category": "symptom|trigger|root_cause", '
+    '"reasoning_summary": "one sentence explaining why this category applies", '
+    '"confidence": 0.85, "supporting_evidence": ["specific finding 1"]}},'
+    '   {{"title": "Alternative hypothesis", "description": "less likely explanation", '
+    '"category": "root_cause", "reasoning_summary": "why this is a root_cause", '
+    '"confidence": 0.10, "supporting_evidence": []}}'
     ' ],'
     ' "evidence": ['
     '   {{"source": "prometheus|loki|k8s|alert", "kind": "metric|log|resource|alert", "label": "short_name", "value": "observed value"}}'
@@ -65,7 +72,12 @@ _REACT_PROMPT = PromptTemplate.from_template(
     ' ]'
     '}}\n\n'
     "Provide at least 2 hypotheses. "
-    "If evidence is ambiguous (no single clear cause), provide 3 or more.\n\n"
+    "If evidence is ambiguous (no single clear cause), provide 3 or more.\n"
+    "Classify each hypothesis with a category:\n"
+    "  symptom   — an observable effect (high error rate, crash loop, DB saturation)\n"
+    "  trigger   — a recent change that preceded the symptom (deploy, config change)\n"
+    "  root_cause — the underlying technical reason (connection leak, misconfiguration)\n"
+    "A well-formed analysis includes at least one hypothesis per category when evidence supports it.\n\n"
     "INCIDENT:\n"
     "{input}\n\n"
     "Thought:{agent_scratchpad}"
@@ -194,6 +206,40 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
             "content": sop_context.strip(),
         })
 
+    # Build structured evidence context from deploy + DB adapters.
+    # These are deterministic pre-computed signals injected into the prompt
+    # so the LLM can reason about them without needing tool calls.
+    deploy_text, deploy_evidence = summarize_deploy_correlation(request.deploy_correlation)
+    db_text, db_evidence = summarize_database_diagnostics(request.database_diagnostics)
+    pre_evidence = deploy_evidence + db_evidence
+
+    # Log pre-computed evidence into the investigation trace
+    if deploy_text:
+        capture.steps.append({"type": "pre_evidence", "content": deploy_text})
+    if db_text:
+        capture.steps.append({"type": "pre_evidence", "content": db_text})
+
+    # Run deterministic hypothesis classifier before the LLM.
+    # This produces typed (symptom/trigger/root_cause) hypotheses grounded
+    # in concrete evidence that are merged with LLM output.
+    pre_hypotheses = classify_hypotheses(
+        alert_name=request.alert_name,
+        alert_labels=request.alert_labels,
+        deploy_correlation=request.deploy_correlation,
+        database_diagnostics=request.database_diagnostics,
+    )
+    if pre_hypotheses:
+        capture.steps.append({
+            "type": "pre_classified_hypotheses",
+            "content": (
+                f"Deterministic classifier produced {len(pre_hypotheses)} hypothesis/hypotheses: "
+                + "; ".join(f"{h.category}:{h.title}" for h in pre_hypotheses)
+            ),
+        })
+
+    # Assemble structured evidence blocks for the LLM prompt
+    structured_evidence_block = "\n\n".join(filter(None, [deploy_text, db_text]))
+
     incident_context = (
         f"Title: {request.incident_title}\n"
         f"Service: {request.service_name or 'unknown'} | "
@@ -202,7 +248,8 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
         f"Labels: {json.dumps(request.alert_labels)}\n"
         f"Annotations: {json.dumps(request.alert_annotations)}\n"
         f"Available remediation actions: {allowed_str}\n"
-        f"{sop_context}"
+        + (f"\n{structured_evidence_block}\n" if structured_evidence_block else "")
+        + f"{sop_context}"
         f"\nStart by querying Prometheus for relevant metrics, "
         f"then check Loki for error logs, "
         f"then fetch the Kubernetes resource state if needed. "
@@ -229,7 +276,11 @@ async def run_investigation(request: AnalysisRequest) -> AnalysisResponse:
             investigation_log=capture.steps,
         )
 
-    structured = structured_output_parser.parse(parsed)
+    structured = structured_output_parser.parse(
+        parsed,
+        pre_evidence=pre_evidence,
+        pre_hypotheses=pre_hypotheses,
+    )
 
     return AnalysisResponse(
         summary=parsed.get("summary", "No summary produced"),

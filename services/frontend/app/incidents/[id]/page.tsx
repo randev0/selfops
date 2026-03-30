@@ -164,7 +164,7 @@ export default function IncidentDetailPage() {
       <div className="flex-1 flex min-h-0">
         {/* Main content */}
         <div className="flex-1 overflow-y-auto">
-          <div className="p-6 space-y-5 max-w-4xl">
+          <div className="p-4 md:p-6 space-y-4 md:space-y-5 max-w-4xl">
             {/* Breadcrumb */}
             <div className="flex items-center gap-1.5 text-xs text-zinc-500">
               <Link href="/incidents" className="hover:text-zinc-300 transition-colors">
@@ -236,13 +236,13 @@ export default function IncidentDetailPage() {
 
             {/* Tabs */}
             <div>
-              <div className="flex gap-1 border-b border-zinc-800 mb-5">
+              <div className="flex gap-1 border-b border-zinc-800 mb-5 overflow-x-auto scrollbar-none">
                 {tabs.map((tab) => (
                   <button
                     key={tab.key}
                     onClick={() => setActiveTab(tab.key)}
                     className={cn(
-                      "px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors",
+                      "px-3 md:px-4 py-2.5 text-sm font-medium border-b-2 -mb-px transition-colors whitespace-nowrap shrink-0",
                       activeTab === tab.key
                         ? "border-blue-500 text-blue-400"
                         : "border-transparent text-zinc-500 hover:text-zinc-300"
@@ -302,10 +302,16 @@ export default function IncidentDetailPage() {
                 </div>
               )}
             </div>
+            {/* Mobile: AI analysis + actions shown below tabs (lg screens have these in the right sidebar) */}
+            <div className="lg:hidden space-y-4 pt-2">
+              <AIAnalysisPanel incident={incident} />
+              <RecommendedActions incident={incident} />
+              <AuditSummaryCard incident={incident} />
+            </div>
           </div>
         </div>
 
-        {/* Right sidebar */}
+        {/* Right sidebar — desktop only */}
         <div className="w-80 shrink-0 overflow-y-auto border-l border-zinc-800 p-4 space-y-4 hidden lg:block">
           <AIAnalysisPanel incident={incident} />
           <RecommendedActions incident={incident} />

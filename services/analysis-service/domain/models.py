@@ -7,7 +7,7 @@ These are pure Pydantic value objects — no database or HTTP concerns here.
 They represent the concepts the analyzer reasons about:
 
   EvidenceItem   — one piece of normalized evidence (metric, log line, k8s state, alert)
-  Hypothesis     — a possible root cause with confidence score and supporting evidence
+  Hypothesis     — a possible explanation ranked by category and confidence
   VerificationStep — a single post-action health check
   ActionPlanItem — a proposed remediation with risk classification and verification steps
   StructuredAnalysis — the complete structured output of one analysis run
@@ -18,6 +18,21 @@ Relationships:
     ├── hypotheses:  list[Hypothesis]   (sorted by confidence desc, rank 1 = most likely)
     └── action_plan: list[ActionPlanItem]
                       └── verification_steps: list[VerificationStep]
+
+Hypothesis categories
+---------------------
+  symptom    — an observable effect (what is being seen in monitoring).
+               Examples: DB saturation, elevated error rate, pod crash loop.
+               Symptoms are the starting point of an investigation.
+
+  trigger    — a recent change that preceded the symptom.
+               Examples: code deploy, configuration change, scaling event.
+               Triggers explain *when* and *what changed*, not *why*.
+
+  root_cause — the underlying technical reason that connects trigger to symptom.
+               Examples: connection pool exhaustion due to leak, resource limit
+               too low, misconfigured retry policy.
+               Root causes explain *why* the change caused the symptom.
 """
 
 from __future__ import annotations
@@ -32,7 +47,12 @@ from pydantic import BaseModel, Field, field_validator
 
 RiskLevel = Literal["low", "medium", "high"]
 EvidenceKind = Literal["metric", "log", "resource", "alert"]
-EvidenceSource = Literal["prometheus", "loki", "k8s", "alert", "other"]
+# "deploy"    — from GitHub deploy correlation evidence
+# "database"  — from PostgreSQL runtime diagnostics evidence
+EvidenceSource = Literal["prometheus", "loki", "k8s", "alert", "deploy", "database", "other"]
+
+# Three-tier hypothesis classification
+HypothesisCategory = Literal["symptom", "trigger", "root_cause"]
 
 
 # --------------------------------------------------------------------------- #
@@ -66,22 +86,37 @@ class EvidenceItem(BaseModel):
 
 class Hypothesis(BaseModel):
     """
-    A possible root cause hypothesis.
+    A possible explanation classified by category and ranked by confidence.
 
     Hypotheses are ranked by confidence (rank 1 = most likely).
     The analyzer MUST produce at least 2 hypotheses; when the top hypothesis
     confidence is < 0.65 (ambiguous evidence), at least 3 are required.
 
+    Every hypothesis now belongs to exactly one of three categories:
+
+      symptom    — an observable effect visible in monitoring
+      trigger    — a recent change that preceded the effect
+      root_cause — the underlying technical reason
+
+    A well-formed analysis produces at least one hypothesis per category
+    when evidence supports it.
+
     Fields:
         title:               short label, e.g. "OOM kill due to memory leak"
         description:         full explanation grounded in the evidence
-        confidence:          float [0, 1] — probability this is the true cause
+        category:            symptom | trigger | root_cause
+        reasoning_summary:   one-sentence explanation of why this category applies
+        confidence:          float [0, 1] — probability this hypothesis is correct
         supporting_evidence: labels of EvidenceItem objects that support this
         rank:                1-based position after confidence-descending sort
     """
 
     title: str = Field(max_length=200)
     description: str = Field(max_length=500)
+    # Default to "root_cause" so existing records without this field
+    # continue to deserialise correctly.
+    category: HypothesisCategory = "root_cause"
+    reasoning_summary: str = Field(default="", max_length=500)
     confidence: float = Field(ge=0.0, le=1.0)
     supporting_evidence: list[str] = Field(default_factory=list)
     rank: int = Field(ge=1)

@@ -8,6 +8,7 @@ import {
 } from "recharts"
 import { ExternalLink } from "lucide-react"
 import { type Incident } from "@/lib/mock-data"
+import { buildLokiUrl } from "@/lib/utils"
 
 const cpuData = [
   { t: "02:38", v: 22 },
@@ -121,7 +122,9 @@ export function EvidenceSection({ incident }: { incident: Incident }) {
         <div className="flex items-center justify-between mb-3">
           <h4 className="text-sm font-semibold text-zinc-100">Log Lines</h4>
           <a
-            href="#"
+            href={buildLokiUrl(incident.service, incident.namespace, incident.createdAt)}
+            target="_blank"
+            rel="noopener noreferrer"
             className="flex items-center gap-1 text-xs text-blue-400 hover:text-blue-300 transition-colors"
           >
             View in Loki

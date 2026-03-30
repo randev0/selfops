@@ -81,3 +81,36 @@ export function formatAbsoluteTime(isoString: string): string {
     hour12: false,
   })
 }
+
+const GRAFANA_BASE = "https://grafana-selfops.steadigital.com"
+
+/** Grafana Explore URL — Prometheus pod restart rate for the given service. */
+export function buildGrafanaUrl(service: string, namespace: string, createdAt: string): string {
+  const from = new Date(createdAt).getTime() - 5 * 60 * 1000
+  const to = Date.now() + 60 * 1000
+  const left = JSON.stringify({
+    datasource: "prometheus",
+    queries: [{
+      expr: `rate(kube_pod_container_status_restarts_total{namespace="${namespace}",pod=~"${service}.*"}[5m]) * 300`,
+      refId: "A",
+      legendFormat: "{{pod}}",
+    }],
+    range: { from: String(from), to: String(to) },
+  })
+  return `${GRAFANA_BASE}/explore?orgId=1&left=${encodeURIComponent(left)}`
+}
+
+/** Grafana Explore URL — Loki logs for the given service / namespace. */
+export function buildLokiUrl(service: string, namespace: string, createdAt: string): string {
+  const from = new Date(createdAt).getTime() - 5 * 60 * 1000
+  const to = Date.now() + 60 * 1000
+  const left = JSON.stringify({
+    datasource: "loki",
+    queries: [{
+      expr: `{namespace="${namespace}",app="${service}"}`,
+      refId: "A",
+    }],
+    range: { from: String(from), to: String(to) },
+  })
+  return `${GRAFANA_BASE}/explore?orgId=1&left=${encodeURIComponent(left)}`
+}

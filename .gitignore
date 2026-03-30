@@ -13,3 +13,4 @@ dist/
 .next/
 *.egg-info/
 .venv/
+.claude/
